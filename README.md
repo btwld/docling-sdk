@@ -1,10 +1,10 @@
-# Docling Client
+# Docling SDK
 
 A TypeScript SDK for [Docling](https://github.com/DS4SD/docling) - Bridge between the Python Docling ecosystem and JavaScript/TypeScript.
 
 ## Overview
 
-Docling Client provides a comprehensive TypeScript interface for:
+Docling SDK provides a comprehensive TypeScript interface for:
 
 - **Docling CLI**: Wrapper around the Python CLI with full TypeScript support
 - **Docling Serve API**: HTTP client for the docling-serve REST API
@@ -23,7 +23,7 @@ Docling Client provides a comprehensive TypeScript interface for:
 - 🤖 **VLM Pipeline**: Vision Language Model support for image analysis and description
 - ⚡ **Streaming**: Memory-efficient processing with stream support
 - 🛡️ **Type Safety**: Full TypeScript support with comprehensive types
-- 🔄 **Unified Interface**: Same methods work for both CLI and API clients
+- 🔄 **Unified Interface**: Same methods work for both CLI and API modes
 
 ## Installation
 
