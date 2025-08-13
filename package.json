@@ -70,7 +70,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@types/archiver": "^6.0.3",
     "archiver": "^7.0.1",
     "ws": "^8.18.0",
     "zod": "^4.0.15"
@@ -85,6 +84,7 @@
     "@semantic-release/github": "^11.0.4",
     "@semantic-release/npm": "^12.0.2",
     "@semantic-release/release-notes-generator": "^14.0.3",
+    "@types/archiver": "^6.0.3",
     "@types/node": "^22.10.2",
     "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.8",
