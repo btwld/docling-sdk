@@ -1,0 +1,28 @@
+# Exclude development and example content from the published package
+
+# Source and tests
+src/
+tests/
+
+# Examples and upstream references
+examples/
+.examples/
+
+# Project docs and scripts
+scripts/
+docs/
+
+# CI/Editor/Meta
+.github/
+.vscode/
+
+# Config files not needed at runtime
+vitest.config.ts
+tsup.config.ts
+tsconfig.json
+typedoc.json
+
+# Misc
+coverage/
+*.log
+
