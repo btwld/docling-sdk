@@ -45,6 +45,7 @@
       "complexity": {
         "noExtraBooleanCast": "error",
         "noMultipleSpacesInRegularExpressionLiterals": "error",
+        "noStaticOnlyClass": "off",
         "noUselessCatch": "error",
         "noUselessTypeConstraint": "error",
         "noWith": "error"
