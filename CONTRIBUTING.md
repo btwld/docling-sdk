@@ -7,7 +7,7 @@ Thank you for your interest in contributing to the Docling SDK! This guide will 
 1. **Fork and Clone**
 
    ```bash
-   git clone https://github.com/your-username/docling-sdk.git
+   git clone https://github.com/btwld/docling-sdk.git
    cd docling-sdk
    ```
 
