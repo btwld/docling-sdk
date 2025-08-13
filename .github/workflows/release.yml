@@ -77,4 +77,4 @@ jobs:
         run: |
           echo "🎉 Successfully released version ${{ needs.release.outputs.version }}"
           echo "📦 Package: https://www.npmjs.com/package/docling-sdk"
-          echo "🏷️ GitHub Release: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.release.outputs.version }}"
+          echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v${{ needs.release.outputs.version }}"

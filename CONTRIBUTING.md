@@ -5,12 +5,14 @@ Thank you for your interest in contributing to the Docling SDK! This guide will 
 ## 🚀 Quick Start
 
 1. **Fork and Clone**
+
    ```bash
-   git clone https://github.com/your-username/docling.git
-   cd docling
+   git clone https://github.com/your-username/docling-sdk.git
+   cd docling-sdk
    ```
 
 2. **Install Dependencies**
+
    ```bash
    npm install
    ```
@@ -23,6 +25,7 @@ Thank you for your interest in contributing to the Docling SDK! This guide will 
 ## 📋 Development Workflow
 
 ### Branch Strategy
+
 - `main` - Production releases
 - `next` - Pre-release features
 - `beta` - Beta testing
@@ -32,6 +35,7 @@ Thank you for your interest in contributing to the Docling SDK! This guide will 
 - `chore/*` - Maintenance tasks
 
 ### Commit Convention
+
 We use [Conventional Commits](https://conventionalcommits.org/):
 
 ```
@@ -43,6 +47,7 @@ type(scope): description
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -54,6 +59,7 @@ type(scope): description
 - `perf`: Performance improvements
 
 **Examples:**
+
 ```bash
 feat(api): add streaming support for large files
 fix(cli): resolve timeout issue with large documents
@@ -65,30 +71,34 @@ docs(readme): update installation instructions
 Releases are **fully automated** using semantic-release:
 
 1. **Patch Release** (`1.0.0` → `1.0.1`)
+
    ```bash
    git commit -m "fix: resolve memory leak in file processing"
    ```
 
 2. **Minor Release** (`1.0.0` → `1.1.0`)
+
    ```bash
    git commit -m "feat: add new OCR engine support"
    ```
 
 3. **Major Release** (`1.0.0` → `2.0.0`)
+
    ```bash
    git commit -m "feat!: redesign API interface
-   
+
    BREAKING CHANGE: The API interface has been completely redesigned"
    ```
 
 ## 🧪 Testing
 
 ### Running Tests
+
 ```bash
 # Unit tests
 npm run test:unit
 
-# Integration tests  
+# Integration tests
 npm run test:integration
 
 # All tests
@@ -102,6 +112,7 @@ npm run test:ui
 ```
 
 ### Writing Tests
+
 - Place unit tests in `tests/unit/`
 - Place integration tests in `tests/integration/`
 - Use descriptive test names
@@ -111,6 +122,7 @@ npm run test:ui
 ## 🔧 Code Quality
 
 ### Linting and Formatting
+
 ```bash
 # Check code style
 npm run lint
@@ -126,7 +138,9 @@ npm run typecheck
 ```
 
 ### Pre-commit Checks
+
 Before committing, ensure:
+
 - [ ] Tests pass (`npm test`)
 - [ ] Linting passes (`npm run lint`)
 - [ ] Types are correct (`npm run typecheck`)
@@ -142,6 +156,7 @@ Publishing is **completely automated**:
 4. **Merge to `alpha`** → Triggers alpha release (`1.0.0-alpha.1`)
 
 ### What Happens Automatically:
+
 - ✅ Version bump in `package.json`
 - ✅ Generate `CHANGELOG.md`
 - ✅ Create GitHub release with notes
@@ -152,6 +167,7 @@ Publishing is **completely automated**:
 ## 🐛 Bug Reports
 
 When reporting bugs, please include:
+
 - Node.js version
 - Operating system
 - Steps to reproduce
@@ -161,6 +177,7 @@ When reporting bugs, please include:
 ## 💡 Feature Requests
 
 For new features:
+
 - Check existing issues first
 - Describe the use case
 - Provide examples

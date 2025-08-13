@@ -60,12 +60,12 @@
   "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
-    "url": "https://github.com/btwld/docling.git"
+    "url": "https://github.com/btwld/docling-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/btwld/docling/issues"
+    "url": "https://github.com/btwld/docling-sdk/issues"
   },
-  "homepage": "https://github.com/btwld/docling#readme",
+  "homepage": "https://github.com/btwld/docling-sdk#readme",
   "engines": {
     "node": ">=18.0.0"
   },
