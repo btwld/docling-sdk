@@ -13,7 +13,10 @@
     }
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.mjs",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.mts",
     "README.md",
     "LICENSE"
   ],
@@ -61,6 +64,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/btwld/docling-sdk.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
   },
   "bugs": {
     "url": "https://github.com/btwld/docling-sdk/issues"

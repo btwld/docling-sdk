@@ -14,6 +14,7 @@ permissions:
   issues: write
   pull-requests: write
   id-token: write
+  packages: write
 
 jobs:
   # Run tests before release
@@ -78,3 +79,36 @@ jobs:
           echo "🎉 Successfully released version ${{ needs.release.outputs.version }}"
           echo "📦 Package: https://www.npmjs.com/package/docling-sdk"
           echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v${{ needs.release.outputs.version }}"
+
+  # Publish to GitHub Package Registry
+  github-packages:
+    needs: release
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.released == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@btwld"
+
+      - run: npm ci
+      - run: npm run build
+
+      # Create scoped package.json for GitHub Packages
+      - name: Setup GitHub Package
+        run: |
+          cp package.json package.json.backup
+          npm pkg set name="@btwld/docling-sdk"
+          npm pkg set publishConfig.registry="https://npm.pkg.github.com"
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Restore original package.json
+      - name: Restore package.json
+        run: mv package.json.backup package.json

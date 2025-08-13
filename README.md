@@ -31,6 +31,10 @@ Docling Client provides a comprehensive TypeScript interface for:
 npm install docling-sdk
 ```
 
+[![npm version](https://badge.fury.io/js/docling-sdk.svg)](https://www.npmjs.com/package/docling-sdk)
+[![GitHub release](https://img.shields.io/github/release/btwld/docling-sdk.svg)](https://github.com/btwld/docling-sdk/releases)
+[![npm downloads](https://img.shields.io/npm/dm/docling-sdk.svg)](https://www.npmjs.com/package/docling-sdk)
+
 ## Quick Start
 
 ### API Usage (Simple)
