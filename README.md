@@ -27,13 +27,25 @@ Docling Client provides a comprehensive TypeScript interface for:
 
 ## Installation
 
+### npm Registry (Recommended)
+
 ```bash
 npm install docling-sdk
 ```
 
+### GitHub Package Registry
+
+```bash
+npm install @btwld/docling-sdk
+```
+
+> **Note**: Both packages are identical. The GitHub Package Registry version is available for enterprise environments or as a backup distribution channel.
+
 [![npm version](https://badge.fury.io/js/docling-sdk.svg)](https://www.npmjs.com/package/docling-sdk)
 [![GitHub release](https://img.shields.io/github/release/btwld/docling-sdk.svg)](https://github.com/btwld/docling-sdk/releases)
 [![npm downloads](https://img.shields.io/npm/dm/docling-sdk.svg)](https://www.npmjs.com/package/docling-sdk)
+[![GitHub Package Registry](https://img.shields.io/badge/GitHub-Package%20Registry-blue?logo=github)](https://github.com/btwld/docling-sdk/packages)
+[![License](https://img.shields.io/npm/l/docling-sdk.svg)](https://github.com/btwld/docling-sdk/blob/main/LICENSE)
 
 ## Quick Start
 
