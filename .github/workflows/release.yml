@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - next
+      - beta
+      - alpha
+      - dev
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # Run tests before release
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  # Release job that depends on tests passing
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm ci
+      - run: npm run build
+
+      # Verify package can be packed
+      - run: npm pack --dry-run
+
+      - name: Release
+        id: release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Optional: Notify on successful release
+  notify:
+    needs: release
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.released == 'true'
+    steps:
+      - name: Notify Release
+        run: |
+          echo "🎉 Successfully released version ${{ needs.release.outputs.version }}"
+          echo "📦 Package: https://www.npmjs.com/package/docling-sdk"
+          echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v${{ needs.release.outputs.version }}"

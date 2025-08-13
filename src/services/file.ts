@@ -1,0 +1,550 @@
+import type { HttpClient } from '../api/http';
+import type {
+  ConversionFileResult,
+  ConversionOptions,
+  ConversionResult,
+  ConvertDocumentResponse,
+  ProcessingError,
+} from '../types/api';
+import type { NodeReadable } from '../types/streams';
+import { AsyncTaskManager } from './async-task-manager';
+
+/**
+ * File service for handling file operations and conversions
+ * Provides clean separation of concerns for file-related functionality
+ */
+export class FileService {
+  private taskManager: AsyncTaskManager;
+
+  constructor(private http: HttpClient) {
+    this.taskManager = new AsyncTaskManager(http);
+  }
+
+  /**
+   * Convert document to various formats (text, HTML, markdown, etc.)
+   * Uses the SYNC endpoint for fast JSON responses by default
+   * For ZIP files, use convertToFile() instead
+   */
+  async convert(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ConversionResult> {
+    return this.convertSync(file, filename, options);
+  }
+
+  /**
+   * Extract text content from document
+   * Uses convert() internally with text format
+   */
+  async extractText(
+    file: Buffer | string,
+    filename: string,
+    options: Omit<ConversionOptions, 'to_formats'> = {}
+  ): Promise<ConversionResult> {
+    return this.convert(file, filename, {
+      ...options,
+      to_formats: ['text'],
+    });
+  }
+
+  /**
+   * Convert document to HTML format
+   * Uses convert() internally with HTML format
+   */
+  async toHtml(
+    file: Buffer | string,
+    filename: string,
+    options: Omit<ConversionOptions, 'to_formats'> = {}
+  ): Promise<ConversionResult> {
+    return this.convert(file, filename, {
+      ...options,
+      to_formats: ['html'],
+    });
+  }
+
+  /**
+   * Convert document to Markdown format
+   * Uses convert() internally with Markdown format
+   */
+  async toMarkdown(
+    file: Buffer | string,
+    filename: string,
+    options: Omit<ConversionOptions, 'to_formats'> = {}
+  ): Promise<ConversionResult> {
+    return this.convert(file, filename, {
+      ...options,
+      to_formats: ['md'],
+    });
+  }
+
+  /**
+   * Convert document to multiple formats
+   * Uses convert() internally with specified formats
+   */
+  async convertDocument(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions
+  ): Promise<ConversionResult> {
+    return this.convert(file, filename, options);
+  }
+
+  /**
+   * Process document with advanced options
+   * Uses convert() internally with processing pipeline
+   */
+  async process(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ConversionResult> {
+    return this.convert(file, filename, {
+      pipeline: 'vlm',
+      ...options,
+    });
+  }
+
+  /**
+   * Convert using ASYNC endpoint (for ZIP files and advanced workflows)
+   * Uses AsyncTaskManager with EventEmitter for clean async handling
+   * Perfect for ZIP downloads, batch processing, long-running tasks
+   */
+  async convertAsync(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ConversionResult> {
+    try {
+      const fileBuffer = await this.ensureBuffer(file);
+      const base64String = fileBuffer.toString('base64');
+
+      const parameters = {
+        sources: [
+          {
+            kind: 'file',
+            base64_string: base64String,
+            filename,
+          },
+        ],
+        options: {
+          ...options,
+        },
+        target: {
+          kind: 'inbody',
+        },
+      };
+
+      const taskId = await this.taskManager.submitTask('/v1/convert/source/async', parameters, {
+        timeout: 300000,
+        pollInterval: 2000,
+      });
+
+      const result = await this.taskManager.waitForCompletion(taskId);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: {
+            message: result.error?.message || 'Async task failed',
+            details: result.error?.details,
+          },
+        };
+      }
+
+      const data = await this.taskManager.getTaskResult<ConvertDocumentResponse>(taskId);
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.createError(error, 'Async conversion failed'),
+      };
+    }
+  }
+
+  /**
+   * Type guard for readable stream
+   */
+  private isReadableStream(value: unknown): value is NodeReadable {
+    return (
+      value !== null &&
+      typeof value === 'object' &&
+      'pipe' in value &&
+      'read' in value &&
+      'readable' in value
+    );
+  }
+
+  /**
+   * Convert document and return as downloadable files (ZIP)
+   * Perfect for S3 uploads, file downloads, batch processing
+   * Uses async endpoint for proper ZIP file support
+   */
+  async convertToFile(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions
+  ): Promise<ConversionFileResult> {
+    return this.convertToFileAsync(file, filename, options);
+  }
+
+  /**
+   * Convert document using SYNC endpoint (fast JSON responses)
+   * Uses the synchronous /v1/convert/file endpoint
+   * Perfect for quick JSON responses, text extraction, HTML conversion
+   */
+  async convertSync(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ConversionResult> {
+    try {
+      const fileBuffer = await this.ensureBuffer(file);
+
+      const response = await this.http.streamUpload<ConvertDocumentResponse>(
+        '/v1/convert/file',
+        [
+          {
+            name: 'files',
+            data: fileBuffer,
+            filename,
+            contentType: this.getContentType(filename),
+            size: fileBuffer.length,
+          },
+        ],
+        this.buildFormFields(options, 'inbody')
+      );
+
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.createError(error, 'Sync conversion failed'),
+      };
+    }
+  }
+
+  /**
+   * Convert document using ASYNC endpoint (ZIP file downloads)
+   * Uses AsyncTaskManager with EventEmitter for clean async handling
+   * Perfect for ZIP file downloads, batch processing, file storage
+   */
+  async convertToFileAsync(
+    file: Buffer | string,
+    filename: string,
+    options: ConversionOptions
+  ): Promise<ConversionFileResult> {
+    try {
+      const fileBuffer = await this.ensureBuffer(file);
+
+      const upload = await this.http.streamUpload<ConvertDocumentResponse>(
+        '/v1/convert/file/async',
+        [
+          {
+            name: 'files',
+            data: fileBuffer,
+            filename,
+            contentType: this.getContentType(filename),
+            size: fileBuffer.length,
+          },
+        ],
+        this.buildFormFields(options, 'zip')
+      );
+
+      const taskId = (upload.data as unknown as { task_id?: string }).task_id;
+      if (!taskId) {
+        return {
+          success: false,
+          error: {
+            message: 'Async upload did not return task_id',
+          },
+        };
+      }
+
+      const result = await this.taskManager.waitForCompletion(taskId);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: {
+            message: result.error?.message || 'ZIP task failed',
+            details: result.error?.details,
+          },
+        };
+      }
+
+      const resultResponse = await this.http.requestFileStream(`/v1/result/${taskId}`, {
+        headers: { Accept: 'application/zip' },
+      });
+
+      const contentType = resultResponse.headers['content-type'] || '';
+
+      if (contentType.includes('application/zip')) {
+        const contentDisposition = resultResponse.headers['content-disposition'] || '';
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+        const zipFilename = filenameMatch ? filenameMatch[1] : `converted_${filename}.zip`;
+
+        const stream = resultResponse.fileStream || resultResponse.data;
+
+        const result: ConversionFileResult = {
+          success: true,
+          fileMetadata: {
+            contentType,
+            filename: zipFilename || 'converted.zip',
+            ...(resultResponse.headers['content-length'] && {
+              size: Number.parseInt(resultResponse.headers['content-length']),
+            }),
+          },
+        };
+
+        if (this.isReadableStream(stream)) {
+          result.fileStream = stream;
+        }
+
+        return result;
+      }
+      return {
+        success: false,
+        error: {
+          message: 'Expected ZIP file but received different content type',
+          details: { contentType, taskId },
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.createError(error, 'Async ZIP conversion failed'),
+      };
+    }
+  }
+
+  /**
+   * Convert input stream to document formats
+   * Perfect for NestJS/Express passthrough processing
+   */
+  async convertStream(
+    inputStream: NodeJS.ReadableStream,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ConversionResult> {
+    try {
+      const response = await this.http.streamPassthrough(
+        '/v1/convert/file',
+        inputStream,
+        filename,
+        this.getContentType(filename),
+        this.buildFormFields(options, 'inbody'),
+        { accept: 'json' }
+      );
+
+      if (response.data && typeof response.data === 'object' && 'document' in response.data) {
+        return {
+          success: true,
+          data: response.data as ConvertDocumentResponse,
+        };
+      }
+
+      return {
+        success: false,
+        error: {
+          message: 'No data received from stream conversion',
+          details: response,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.createError(error, 'Stream to JSON conversion failed'),
+      };
+    }
+  }
+
+  /**
+   * Convert input stream to downloadable files (ZIP)
+   * Perfect for NestJS/Express file proxy
+   */
+  async convertStreamToFile(
+    _inputStream: NodeJS.ReadableStream,
+    filename: string,
+    options: ConversionOptions
+  ): Promise<ConversionFileResult> {
+    try {
+      const upload = await this.http.streamPassthrough<ConvertDocumentResponse>(
+        '/v1/convert/file/async',
+        _inputStream,
+        filename,
+        this.getContentType(filename),
+        this.buildFormFields(options, 'zip'),
+        { accept: 'json' }
+      );
+
+      if (!upload.data || typeof upload.data !== 'object') {
+        return {
+          success: false,
+          error: { message: 'Async upload failed', details: upload },
+        };
+      }
+
+      const taskId = (upload.data as { task_id?: string }).task_id;
+      if (!taskId) {
+        return {
+          success: false,
+          error: { message: 'Missing task_id from async upload response' },
+        };
+      }
+
+      const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const maxMs = 15 * 60 * 1000;
+      const intervalMs = 2000;
+      const start = Date.now();
+
+      let finalStatus: string | undefined;
+      while (Date.now() - start < maxMs) {
+        const status = await this.http.getJson<{ task_status: string }>(
+          `/v1/status/poll/${taskId}`
+        );
+
+        if (status.data.task_status === 'success' || status.data.task_status === 'failure') {
+          finalStatus = status.data.task_status;
+          break;
+        }
+        await delay(intervalMs);
+      }
+
+      if (!finalStatus) {
+        return {
+          success: false,
+          error: { message: 'Task polling timeout' },
+        };
+      }
+
+      if (finalStatus !== 'success') {
+        return {
+          success: false,
+          error: { message: `Task failed with status: ${finalStatus}` },
+        };
+      }
+
+      const fileRes = await this.http.requestFileStream<ConvertDocumentResponse>(
+        `/v1/result/${taskId}`,
+        { method: 'GET', headers: { Accept: 'application/zip' } }
+      );
+
+      if (fileRes.fileStream && fileRes.fileMetadata) {
+        return {
+          success: true,
+          fileStream: fileRes.fileStream,
+          fileMetadata: fileRes.fileMetadata,
+        };
+      }
+
+      return {
+        success: false,
+        error: {
+          message: 'Expected ZIP stream but did not receive a file stream',
+          details: { headers: fileRes.headers, status: fileRes.status },
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.createError(error, 'Stream to ZIP conversion failed'),
+      };
+    }
+  }
+
+  /**
+   * Get content type from filename
+   */
+  private static readonly EXT_CT_MAP: ReadonlyMap<string, string> = new Map([
+    ['pdf', 'application/pdf'],
+    ['doc', 'application/msword'],
+    ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['txt', 'text/plain'],
+    ['md', 'text/markdown'],
+    ['html', 'text/html'],
+    ['jpg', 'image/jpeg'],
+    ['jpeg', 'image/jpeg'],
+    ['png', 'image/png'],
+    ['gif', 'image/gif'],
+  ]);
+
+  private getContentType(filename: string): string {
+    const ext = filename.toLowerCase().split('.').pop();
+    return (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) || 'application/octet-stream';
+  }
+
+  /**
+   * Ensure input is a Buffer
+   */
+  private async ensureBuffer(file: Buffer | string): Promise<Buffer> {
+    if (typeof file === 'string') {
+      const fs = await import('node:fs/promises');
+      return fs.readFile(file);
+    }
+    return file;
+  }
+
+  /**
+   * Get the async task manager for advanced usage
+   * Allows access to EventEmitter for progress tracking, etc.
+   */
+  getTaskManager(): AsyncTaskManager {
+    return this.taskManager;
+  }
+
+  /**
+   * Clean up resources (call on shutdown)
+   */
+  destroy(): void {
+    this.taskManager.destroy();
+  }
+
+  /**
+   * Build form fields for API request
+   */
+  private buildFormFields(
+    options: ConversionOptions,
+    targetKind?: 'inbody' | 'zip'
+  ): Record<string, unknown> {
+    const fields: Record<string, unknown> = {};
+
+    if (options.to_formats) fields.to_formats = options.to_formats;
+    if (options.pdf_backend) fields.pdf_backend = options.pdf_backend;
+    if (options.do_ocr !== undefined) fields.do_ocr = options.do_ocr.toString();
+    if (options.force_ocr !== undefined) fields.force_ocr = options.force_ocr.toString();
+    if (options.ocr_engine) fields.ocr_engine = options.ocr_engine;
+    if (options.table_mode) fields.table_mode = options.table_mode;
+    if (options.pipeline) fields.pipeline = options.pipeline;
+    if (options.abort_on_error !== undefined)
+      fields.abort_on_error = options.abort_on_error.toString();
+    if (options.do_table_structure !== undefined)
+      fields.do_table_structure = options.do_table_structure.toString();
+    if (options.include_images !== undefined)
+      fields.include_images = options.include_images.toString();
+    if (options.images_scale !== undefined) fields.images_scale = options.images_scale.toString();
+
+    if (targetKind) {
+      fields.target_type = targetKind;
+    }
+
+    return fields;
+  }
+
+  /**
+   * Create standardized error object
+   */
+  private createError(error: unknown, message: string): ProcessingError {
+    return {
+      message: error instanceof Error ? error.message : message,
+      details: error,
+    };
+  }
+}
