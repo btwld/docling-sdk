@@ -57,7 +57,7 @@
     "cli"
   ],
   "author": "Kauan Guesser <54258870+kauandotnet@users.noreply.github.com>",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
     "url": "https://github.com/btwld/docling.git"
