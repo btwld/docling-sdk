@@ -90,6 +90,16 @@ Releases are **fully automated** using semantic-release:
    BREAKING CHANGE: The API interface has been completely redesigned"
    ```
 
+### Package Ownership
+
+The following npm users have ownership/publishing rights to `docling-sdk`:
+
+- **kauandotnet** (primary maintainer)
+- **leoafarias**
+- **tnramalho**
+
+New owners can be added using: `npm owner add <username> docling-sdk`
+
 ## 🧪 Testing
 
 ### Running Tests

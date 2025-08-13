@@ -5,14 +5,14 @@ export default defineConfig({
   format: ["cjs", "esm"],
   dts: true,
   splitting: false,
-  sourcemap: true,
+  sourcemap: false, // Exclude source maps from build
   clean: true,
-  minify: false,
+  minify: true, // Enable minification for smaller output
   target: "es2022",
   outDir: "dist",
   treeshake: true,
   bundle: true,
-  external: ["ws", "form-data", "cross-spawn"],
+  external: ["ws", "archiver", "zod"],
   esbuildOptions(options) {
     options.banner = {
       js: '"use strict";',
