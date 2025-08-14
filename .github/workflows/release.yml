@@ -18,6 +18,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -62,18 +63,30 @@ jobs:
             exit 0
           fi
 
-          # Check if package.json version changed in this push
-          if git diff HEAD~1 HEAD --name-only | grep -q "package.json"; then
-            if git diff HEAD~1 HEAD package.json | grep -q '"version"'; then
-              echo "should-release=true" >> $GITHUB_OUTPUT
-              echo "✅ Version change detected in package.json"
+          # For push events, check if package.json version changed
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Check if we have a previous commit to compare against
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              # Check if package.json version changed in this push
+              if git diff HEAD~1 HEAD --name-only | grep -q "package.json"; then
+                if git diff HEAD~1 HEAD package.json | grep -q '"version"'; then
+                  echo "should-release=true" >> $GITHUB_OUTPUT
+                  echo "✅ Version change detected in package.json"
+                else
+                  echo "should-release=false" >> $GITHUB_OUTPUT
+                  echo "ℹ️ No version change in package.json"
+                fi
+              else
+                echo "should-release=false" >> $GITHUB_OUTPUT
+                echo "ℹ️ No package.json changes"
+              fi
             else
               echo "should-release=false" >> $GITHUB_OUTPUT
-              echo "ℹ️ No version change in package.json"
+              echo "ℹ️ No previous commit to compare against"
             fi
           else
             echo "should-release=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ No package.json changes"
+            echo "ℹ️ Not a push or manual trigger event"
           fi
 
       - name: Build packages
