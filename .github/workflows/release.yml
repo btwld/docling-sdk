@@ -168,7 +168,7 @@ jobs:
             --title "Release $version" \
             --notes "## Changes in $version
 
-$release_notes
+${release_notes}
 
 ## Installation
 
