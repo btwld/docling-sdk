@@ -1,0 +1,18 @@
+{
+  "extends": "../../tools/typescript-config/nestjs.json",
+  "compilerOptions": {
+    "baseUrl": "../../",
+    "paths": {
+      "@nest-mind/mcp-*": ["packages/*/src", "packages/*/dist"]
+    },
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*"],
+  "exclude": ["node_modules"],
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
+  }
+}

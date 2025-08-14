@@ -1,0 +1,12 @@
+{
+  "name": "@nestjs-mcp/typescript-config",
+  "version": "0.1.0",
+  "description": "Shared TypeScript configuration for NestJS MCP packages",
+  "private": true,
+  "main": "index.js",
+  "files": [
+    "base.json",
+    "nestjs.json",
+    "library.json"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "extends": "./tools/typescript-config/base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@nest-mind/mcp-core": ["./packages/core/src"],
+      "@nest-mind/mcp-server": ["./packages/server/src"]
+    }
+  },
+  "include": [],
+  "exclude": ["node_modules", "dist"],
+  "references": [
+    { "path": "./packages/core/tsconfig.build.json" },
+    { "path": "./packages/server/tsconfig.build.json" }
+  ]
+}

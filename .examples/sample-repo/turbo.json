@@ -1,0 +1,94 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "globalDependencies": ["**/.env.*local", ".env"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", "build/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "jest.config.*",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+      ]
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["$TURBO_DEFAULT$", "jest.config.*", "**/*.e2e-spec.ts"]
+    },
+    "test:performance": {
+      "dependsOn": ["^build"],
+      "outputs": ["performance-reports/**"],
+      "inputs": ["$TURBO_DEFAULT$", "**/*.perf.ts", "**/*.benchmark.ts"]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "outputs": ["test-results/**"],
+      "inputs": ["$TURBO_DEFAULT$", "**/*.integration.ts"]
+    },
+    "test:transport:websocket": {
+      "dependsOn": ["^build"],
+      "outputs": ["test-results/**"]
+    },
+    "test:transport:sse": {
+      "dependsOn": ["^build"],
+      "outputs": ["test-results/**"]
+    },
+    "test:transport:streamable-http": {
+      "dependsOn": ["^build"],
+      "outputs": ["test-results/**"]
+    },
+    "test:transport:stdio": {
+      "dependsOn": ["^build"],
+      "outputs": ["test-results/**"]
+    },
+    "test:watch": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "eslint.config.*", ".eslintrc.*"]
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "format:check": {
+      "outputs": []
+    },
+    "clean": {
+      "cache": false
+    },
+    "check-types": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "tsconfig*.json"]
+    },
+    "changeset": {
+      "cache": false
+    },
+    "version-packages": {
+      "cache": false
+    },
+    "release": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
+  }
+}

@@ -1,0 +1,283 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Run daily at 3 AM UTC
+    - cron: '0 3 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Check if integration tests should run
+  check-changes:
+    name: Check Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should-run: ${{ steps.changes.outputs.should-run }}
+      server: ${{ steps.changes.outputs.server }}
+      core: ${{ steps.changes.outputs.core }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            server:
+              - 'packages/server/**'
+            core:
+              - 'packages/core/**'
+            integration:
+              - 'packages/server/tests/**'
+              - 'packages/server/test/**'
+
+      - name: Determine if should run
+        id: should-run
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.changes.outputs.server }}" == "true" || "${{ steps.changes.outputs.core }}" == "true" || "${{ steps.changes.outputs.integration }}" == "true" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-run=false" >> $GITHUB_OUTPUT
+          fi
+
+  # MCP Protocol Integration Tests
+  mcp-integration:
+    name: MCP Protocol Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    services:
+      # Add any required services (Redis, PostgreSQL, etc.)
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Start test services
+        run: |
+          # Start any additional services needed for integration tests
+          echo "Starting integration test environment..."
+
+      - name: Run MCP integration tests
+        run: |
+          # Run MCP-specific integration tests
+          pnpm --filter @nest-mind/mcp-server run test:integration
+        env:
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcp-integration-results
+          path: |
+            packages/server/coverage/
+            packages/server/test-results/
+          retention-days: 7
+
+  # Transport Layer Integration Tests
+  transport-integration:
+    name: Transport Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    strategy:
+      matrix:
+        transport: [websocket, sse, streamable-http, stdio]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run transport-specific tests
+        run: |
+          # Run tests for specific transport
+          pnpm --filter @nest-mind/mcp-server run test:transport:${{ matrix.transport }}
+        env:
+          TRANSPORT_TYPE: ${{ matrix.transport }}
+          NODE_ENV: test
+
+      - name: Upload transport test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transport-${{ matrix.transport }}-results
+          path: |
+            packages/server/test-results/transport-${{ matrix.transport }}/
+          retention-days: 3
+
+  # Environment Compatibility Tests
+  environment-tests:
+    name: Environment Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    strategy:
+      matrix:
+        environment:
+          - name: node-18-minimal
+            dockerfile: test/environments/node-18-minimal.Dockerfile
+          - name: node-20-alpine
+            dockerfile: test/environments/node-20-alpine.Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test environment
+        run: |
+          docker build -f ${{ matrix.environment.dockerfile }} -t test-env:${{ matrix.environment.name }} .
+
+      - name: Run environment tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            test-env:${{ matrix.environment.name }} \
+            sh -c "pnpm install && pnpm run build && pnpm run test"
+
+      - name: Upload environment test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: env-${{ matrix.environment.name }}-results
+          path: |
+            test-results/environment/
+          retention-days: 3
+
+  # Performance Integration Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run performance benchmarks
+        run: |
+          # Run performance tests
+          pnpm run test:performance
+        env:
+          NODE_ENV: test
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-results
+          path: |
+            performance-reports/
+          retention-days: 30
+
+  # Aggregate integration test results
+  integration-results:
+    name: Integration Test Results
+    runs-on: ubuntu-latest
+    needs:
+      [
+        check-changes,
+        mcp-integration,
+        transport-integration,
+        environment-tests,
+        performance-tests,
+      ]
+    if: always() && needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Check integration test results
+        run: |
+          echo "MCP Integration: ${{ needs.mcp-integration.result }}"
+          echo "Transport Integration: ${{ needs.transport-integration.result }}"
+          echo "Environment Tests: ${{ needs.environment-tests.result }}"
+          echo "Performance Tests: ${{ needs.performance-tests.result }}"
+
+          if [[ "${{ needs.mcp-integration.result }}" == "failure" || 
+                "${{ needs.transport-integration.result }}" == "failure" || 
+                "${{ needs.environment-tests.result }}" == "failure" || 
+                "${{ needs.performance-tests.result }}" == "failure" ]]; then
+            echo "❌ Integration tests failed"
+            exit 1
+          else
+            echo "✅ Integration tests passed"
+          fi

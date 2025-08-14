@@ -1,0 +1,22 @@
+{
+  "extends": "../../tools/typescript-config/nestjs.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@nest-mind/mcp-core": ["../core/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*spec.ts",
+    "**/*.test.ts",
+    "**/*.e2e-spec.ts"
+  ],
+  "references": [{ "path": "../core/tsconfig.build.json" }]
+}

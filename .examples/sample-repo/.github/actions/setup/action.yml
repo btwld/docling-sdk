@@ -1,0 +1,93 @@
+name: 'Setup NestJS MCP Environment'
+description: 'Sets up Node.js, pnpm, and dependencies with caching'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '18'
+  cache-key-suffix:
+    description: 'Additional suffix for cache key'
+    required: false
+    default: ''
+  install-dependencies:
+    description: 'Whether to install dependencies'
+    required: false
+    default: 'true'
+  turbo-token:
+    description: 'Turbo token for remote caching'
+    required: false
+  turbo-team:
+    description: 'Turbo team for remote caching'
+    required: false
+
+outputs:
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.cache.outputs.cache-hit }}
+  node-version:
+    description: 'Node.js version used'
+    value: ${{ steps.setup-node.outputs.node-version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      id: setup-node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        run_install: false
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ inputs.cache-key-suffix }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}-
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Setup Turbo cache
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: ${{ runner.os }}-turbo-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-turbo-
+
+    - name: Install dependencies
+      if: inputs.install-dependencies == 'true'
+      shell: bash
+      run: |
+        # Try frozen lockfile first, fallback to regular install if needed
+        pnpm install --frozen-lockfile || pnpm install
+
+    - name: Setup Turbo remote cache
+      if: inputs.turbo-token != '' && inputs.turbo-team != ''
+      shell: bash
+      run: |
+        pnpm turbo login --token=${{ inputs.turbo-token }}
+        pnpm turbo link --team=${{ inputs.turbo-team }}
+      env:
+        TURBO_TOKEN: ${{ inputs.turbo-token }}
+        TURBO_TEAM: ${{ inputs.turbo-team }}
+
+    - name: Verify setup
+      shell: bash
+      run: |
+        echo "Node.js version: $(node --version)"
+        echo "pnpm version: $(pnpm --version)"
+        echo "Turbo version: $(pnpm turbo --version)"
+        echo "Cache hit: ${{ steps.cache.outputs.cache-hit }}"

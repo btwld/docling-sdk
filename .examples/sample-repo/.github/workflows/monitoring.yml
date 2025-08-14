@@ -1,0 +1,430 @@
+name: Monitoring & Alerting
+
+on:
+  schedule:
+    # Run monitoring checks every hour
+    - cron: '0 * * * *'
+    # Run comprehensive health checks daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      check-type:
+        description: 'Type of monitoring check to run'
+        required: true
+        default: 'health'
+        type: choice
+        options:
+          - health
+          - performance
+          - security
+          - dependencies
+          - all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.check-type || 'scheduled' }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Determine what checks to run
+  determine-checks:
+    name: Determine Checks
+    runs-on: ubuntu-latest
+    outputs:
+      run-health: ${{ steps.checks.outputs.run-health }}
+      run-performance: ${{ steps.checks.outputs.run-performance }}
+      run-security: ${{ steps.checks.outputs.run-security }}
+      run-dependencies: ${{ steps.checks.outputs.run-dependencies }}
+    steps:
+      - name: Determine checks to run
+        id: checks
+        run: |
+          check_type="${{ github.event.inputs.check-type || 'auto' }}"
+
+          if [[ "$check_type" == "all" || "$check_type" == "auto" ]]; then
+            echo "run-health=true" >> $GITHUB_OUTPUT
+            echo "run-performance=true" >> $GITHUB_OUTPUT
+            echo "run-security=true" >> $GITHUB_OUTPUT
+            echo "run-dependencies=true" >> $GITHUB_OUTPUT
+          elif [[ "$check_type" == "health" ]]; then
+            echo "run-health=true" >> $GITHUB_OUTPUT
+            echo "run-performance=false" >> $GITHUB_OUTPUT
+            echo "run-security=false" >> $GITHUB_OUTPUT
+            echo "run-dependencies=false" >> $GITHUB_OUTPUT
+          elif [[ "$check_type" == "performance" ]]; then
+            echo "run-health=false" >> $GITHUB_OUTPUT
+            echo "run-performance=true" >> $GITHUB_OUTPUT
+            echo "run-security=false" >> $GITHUB_OUTPUT
+            echo "run-dependencies=false" >> $GITHUB_OUTPUT
+          elif [[ "$check_type" == "security" ]]; then
+            echo "run-health=false" >> $GITHUB_OUTPUT
+            echo "run-performance=false" >> $GITHUB_OUTPUT
+            echo "run-security=true" >> $GITHUB_OUTPUT
+            echo "run-dependencies=false" >> $GITHUB_OUTPUT
+          elif [[ "$check_type" == "dependencies" ]]; then
+            echo "run-health=false" >> $GITHUB_OUTPUT
+            echo "run-performance=false" >> $GITHUB_OUTPUT
+            echo "run-security=false" >> $GITHUB_OUTPUT
+            echo "run-dependencies=true" >> $GITHUB_OUTPUT
+          fi
+
+  # Health monitoring
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: determine-checks
+    if: needs.determine-checks.outputs.run-health == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Check package availability on NPM
+        run: |
+          echo "📦 Checking package availability on NPM..."
+
+          packages=("@nest-mind/mcp-core" "@nest-mind/mcp-server")
+
+          for package in "${packages[@]}"; do
+            echo "Checking $package..."
+            
+            # Check if package exists and get latest version
+            latest_version=$(npm view "$package" version 2>/dev/null || echo "not-found")
+            
+            if [[ "$latest_version" == "not-found" ]]; then
+              echo "⚠️ Package $package not found on NPM"
+            else
+              echo "✅ $package@$latest_version is available"
+              
+              # Test installation
+              temp_dir=$(mktemp -d)
+              cd "$temp_dir"
+              npm init -y > /dev/null
+              
+              if npm install "$package" > /dev/null 2>&1; then
+                echo "✅ $package installs successfully"
+              else
+                echo "❌ $package installation failed"
+                exit 1
+              fi
+              
+              cd - > /dev/null
+              rm -rf "$temp_dir"
+            fi
+          done
+
+      - name: Check repository health
+        run: |
+          echo "🏥 Checking repository health..."
+
+          # Check for required files
+          required_files=("README.md" "LICENSE" "package.json" "turbo.json")
+
+          for file in "${required_files[@]}"; do
+            if [[ -f "$file" ]]; then
+              echo "✅ $file exists"
+            else
+              echo "❌ Missing required file: $file"
+              exit 1
+            fi
+          done
+
+          # Check package structure
+          for package in packages/*/; do
+            if [[ -f "$package/package.json" ]]; then
+              package_name=$(basename "$package")
+              
+              # Check for essential package files
+              if [[ -f "$package/README.md" ]]; then
+                echo "✅ $package_name has README.md"
+              else
+                echo "⚠️ $package_name missing README.md"
+              fi
+              
+              if [[ -f "$package/src/index.ts" ]]; then
+                echo "✅ $package_name has src/index.ts"
+              else
+                echo "⚠️ $package_name missing src/index.ts"
+              fi
+            fi
+          done
+
+      - name: Build health check
+        run: |
+          echo "🏗️ Running build health check..."
+
+          pnpm run build || {
+            echo "❌ Build health check failed"
+            exit 1
+          }
+
+          echo "✅ Build health check passed"
+
+      - name: Test health check
+        run: |
+          echo "🧪 Running test health check..."
+
+          pnpm run test || {
+            echo "❌ Test health check failed"
+            exit 1
+          }
+
+          echo "✅ Test health check passed"
+
+  # Performance monitoring
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: determine-checks
+    if: needs.determine-checks.outputs.run-performance == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Monitor build performance
+        run: |
+          echo "⚡ Monitoring build performance..."
+
+          start_time=$(date +%s)
+          pnpm run build
+          end_time=$(date +%s)
+
+          build_time=$((end_time - start_time))
+          echo "Build time: ${build_time}s"
+
+          # Alert if build takes too long (e.g., > 5 minutes)
+          if [[ $build_time -gt 300 ]]; then
+            echo "⚠️ Build time exceeded threshold (${build_time}s > 300s)"
+          else
+            echo "✅ Build performance is acceptable"
+          fi
+
+      - name: Monitor test performance
+        run: |
+          echo "🧪 Monitoring test performance..."
+
+          start_time=$(date +%s)
+          pnpm run test
+          end_time=$(date +%s)
+
+          test_time=$((end_time - start_time))
+          echo "Test time: ${test_time}s"
+
+          # Alert if tests take too long (e.g., > 10 minutes)
+          if [[ $test_time -gt 600 ]]; then
+            echo "⚠️ Test time exceeded threshold (${test_time}s > 600s)"
+          else
+            echo "✅ Test performance is acceptable"
+          fi
+
+      - name: Monitor package sizes
+        run: |
+          echo "📦 Monitoring package sizes..."
+
+          for package in packages/*/; do
+            if [[ -d "$package/dist" ]]; then
+              package_name=$(basename "$package")
+              size=$(find "$package/dist" -name "*.js" -exec wc -c {} + | tail -1 | awk '{print $1}')
+              size_mb=$((size / 1024 / 1024))
+              
+              echo "$package_name: ${size} bytes (${size_mb}MB)"
+              
+              # Alert if package is too large (e.g., > 10MB)
+              if [[ $size_mb -gt 10 ]]; then
+                echo "⚠️ Package $package_name is large (${size_mb}MB)"
+              fi
+            fi
+          done
+
+  # Security monitoring
+  security-monitoring:
+    name: Security Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: determine-checks
+    if: needs.determine-checks.outputs.run-security == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          install-dependencies: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Security vulnerability scan
+        run: |
+          echo "🔒 Running security vulnerability scan..."
+
+          pnpm audit --audit-level moderate --json > audit-results.json || true
+
+          if [[ -s audit-results.json ]]; then
+            vulnerabilities=$(cat audit-results.json | jq '.metadata.vulnerabilities.total' 2>/dev/null || echo "0")
+            high_critical=$(cat audit-results.json | jq '.metadata.vulnerabilities.high + .metadata.vulnerabilities.critical' 2>/dev/null || echo "0")
+            
+            echo "Total vulnerabilities: $vulnerabilities"
+            echo "High/Critical vulnerabilities: $high_critical"
+            
+            if [[ $high_critical -gt 0 ]]; then
+              echo "❌ High or critical vulnerabilities found"
+              cat audit-results.json | jq -r '.vulnerabilities | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "- \(.key): \(.value.severity)"'
+              exit 1
+            elif [[ $vulnerabilities -gt 0 ]]; then
+              echo "⚠️ Some vulnerabilities found, but none are high/critical"
+            else
+              echo "✅ No vulnerabilities found"
+            fi
+          else
+            echo "✅ No vulnerabilities found"
+          fi
+
+      - name: Check for secrets in code
+        run: |
+          echo "🔍 Checking for secrets in code..."
+
+          # Simple regex patterns for common secrets
+          secret_patterns=(
+            "password\s*=\s*['\"][^'\"]+['\"]"
+            "api[_-]?key\s*=\s*['\"][^'\"]+['\"]"
+            "secret\s*=\s*['\"][^'\"]+['\"]"
+            "token\s*=\s*['\"][^'\"]+['\"]"
+          )
+
+          found_secrets=false
+
+          for pattern in "${secret_patterns[@]}"; do
+            if grep -r -i -E "$pattern" packages/ --include="*.ts" --include="*.js" --exclude-dir=node_modules; then
+              echo "⚠️ Potential secret found matching pattern: $pattern"
+              found_secrets=true
+            fi
+          done
+
+          if [[ "$found_secrets" == "false" ]]; then
+            echo "✅ No obvious secrets found in code"
+          fi
+
+  # Dependency monitoring
+  dependency-monitoring:
+    name: Dependency Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: determine-checks
+    if: needs.determine-checks.outputs.run-dependencies == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+
+      - name: Check for outdated dependencies
+        run: |
+          echo "📅 Checking for outdated dependencies..."
+
+          # Check for outdated packages
+          outdated_output=$(pnpm outdated --format json 2>/dev/null || echo "{}")
+
+          if [[ "$outdated_output" != "{}" ]]; then
+            echo "⚠️ Outdated dependencies found:"
+            echo "$outdated_output" | jq -r 'to_entries[] | "- \(.key): \(.value.current) → \(.value.latest)"'
+          else
+            echo "✅ All dependencies are up to date"
+          fi
+
+      - name: Check dependency synchronization
+        run: |
+          echo "🔄 Checking dependency synchronization..."
+
+          pnpm deps:check || {
+            echo "⚠️ Dependencies are not synchronized"
+            echo "Run 'pnpm deps:fix' to fix dependency mismatches"
+          }
+
+  # Monitoring summary and alerting
+  monitoring-summary:
+    name: Monitoring Summary
+    runs-on: ubuntu-latest
+    needs:
+      [
+        determine-checks,
+        health-check,
+        performance-monitoring,
+        security-monitoring,
+        dependency-monitoring,
+      ]
+    if: always()
+
+    steps:
+      - name: Monitoring results summary
+        run: |
+          echo "📊 Monitoring Summary"
+          echo "===================="
+
+          if [[ "${{ needs.determine-checks.outputs.run-health }}" == "true" ]]; then
+            echo "Health Check: ${{ needs.health-check.result }}"
+          fi
+
+          if [[ "${{ needs.determine-checks.outputs.run-performance }}" == "true" ]]; then
+            echo "Performance Monitoring: ${{ needs.performance-monitoring.result }}"
+          fi
+
+          if [[ "${{ needs.determine-checks.outputs.run-security }}" == "true" ]]; then
+            echo "Security Monitoring: ${{ needs.security-monitoring.result }}"
+          fi
+
+          if [[ "${{ needs.determine-checks.outputs.run-dependencies }}" == "true" ]]; then
+            echo "Dependency Monitoring: ${{ needs.dependency-monitoring.result }}"
+          fi
+
+      - name: Send alerts if needed
+        if: contains(needs.*.result, 'failure')
+        run: |
+          echo "🚨 Monitoring alerts triggered"
+
+          # TODO: Implement alerting mechanism
+          # This could include:
+          # - Slack notifications
+          # - Email alerts
+          # - GitHub issues
+          # - PagerDuty alerts
+
+          echo "Alert: Monitoring checks failed - manual investigation required"

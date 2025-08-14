@@ -1,0 +1,85 @@
+name: Bug Report
+description: File a bug report
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      description: Which package is affected?
+      options:
+        - "@nest-mind/mcp-server"
+        - "@nest-mind/mcp-core"
+        - "@nest-mind/mcp-client"
+        - "@nest-mind/mcp-gateway"
+        - "@nest-mind/mcp-testing"
+        - "@nest-mind/mcp-cli"
+        - "Examples"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of the package are you using?
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Please provide information about your environment:
+      value: |
+        - OS: [e.g. macOS, Windows, Linux]
+        - Node.js version: [e.g. 18.17.0]
+        - Package manager: [e.g. pnpm, npm, yarn]
+        - NestJS version: [e.g. 11.0.1]
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here.

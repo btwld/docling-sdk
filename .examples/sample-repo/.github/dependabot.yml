@@ -1,0 +1,49 @@
+version: 2
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "nest-mind/maintainers"
+    assignees:
+      - "nest-mind/maintainers"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      nestjs:
+        patterns:
+          - "@nestjs/*"
+      testing:
+        patterns:
+          - "jest*"
+          - "@types/jest"
+          - "supertest"
+          - "@types/supertest"
+      linting:
+        patterns:
+          - "eslint*"
+          - "@typescript-eslint/*"
+          - "prettier"
+      build-tools:
+        patterns:
+          - "typescript"
+          - "turbo"
+          - "@swc/*"
+          - "ts-*"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

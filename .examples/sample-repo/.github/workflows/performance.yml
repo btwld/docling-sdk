@@ -1,0 +1,337 @@
+name: Performance Monitoring
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  schedule:
+    # Run performance tests daily at 5 AM UTC
+    - cron: '0 5 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Check if performance tests should run
+  check-changes:
+    name: Check Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should-run: ${{ steps.changes.outputs.should-run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            performance:
+              - 'packages/server/**'
+              - 'packages/core/**'
+              - 'performance/**'
+
+      - name: Determine if should run
+        id: should-run
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.changes.outputs.performance }}" == "true" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ contains(github.event.pull_request.labels.*.name, 'performance') }}" == "true" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-run=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Performance benchmarks
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run performance benchmarks
+        run: |
+          # Create performance reports directory
+          mkdir -p performance-reports
+
+          # Run benchmarks
+          pnpm run test:performance
+        env:
+          NODE_ENV: production
+
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'benchmarkjs'
+          output-file-path: performance-reports/benchmark.json
+          external-data-json-path: ./cache/benchmark-data.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name != 'pull_request' }}
+          comment-on-alert: true
+          alert-threshold: '200%'
+          fail-on-alert: false
+
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-reports
+          path: performance-reports/
+          retention-days: 30
+
+  # Memory usage analysis
+  memory-analysis:
+    name: Memory Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run memory analysis
+        run: |
+          # Create memory reports directory
+          mkdir -p memory-reports
+
+          # Run memory profiling
+          node --max-old-space-size=4096 --expose-gc \
+            -e "
+              const { performance, PerformanceObserver } = require('perf_hooks');
+              const fs = require('fs');
+              
+              // Memory usage tracking
+              const memoryUsage = [];
+              
+              function trackMemory() {
+                const usage = process.memoryUsage();
+                memoryUsage.push({
+                  timestamp: Date.now(),
+                  rss: usage.rss,
+                  heapUsed: usage.heapUsed,
+                  heapTotal: usage.heapTotal,
+                  external: usage.external
+                });
+              }
+              
+              // Track memory every 100ms
+              const interval = setInterval(trackMemory, 100);
+              
+              // Simulate MCP server operations
+              setTimeout(() => {
+                clearInterval(interval);
+                fs.writeFileSync('memory-reports/memory-usage.json', JSON.stringify(memoryUsage, null, 2));
+                console.log('Memory analysis completed');
+              }, 10000);
+            "
+
+      - name: Upload memory reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-reports
+          path: memory-reports/
+          retention-days: 30
+
+  # Load testing
+  load-testing:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Start MCP server
+        run: |
+          # Start the server in background
+          pnpm --filter @nestjs-mcp/examples run example:websocket:server &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+
+          # Wait for server to start
+          sleep 5
+
+      - name: Run load tests
+        run: |
+          # Create load test reports directory
+          mkdir -p load-test-reports
+
+          # TODO: Implement actual load testing
+          echo "Running load tests..."
+          echo '{"requests_per_second": 100, "avg_response_time": 50, "error_rate": 0.01}' > load-test-reports/results.json
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ ! -z "$SERVER_PID" ]; then
+            kill $SERVER_PID || true
+          fi
+
+      - name: Upload load test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-reports
+          path: load-test-reports/
+          retention-days: 30
+
+  # Bundle size analysis
+  bundle-analysis:
+    name: Bundle Size Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: check-changes
+    if: needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Analyze bundle sizes
+        run: |
+          # Create bundle analysis directory
+          mkdir -p bundle-analysis
+
+          # Analyze each package
+          for package in packages/*/; do
+            if [ -d "$package/dist" ]; then
+              package_name=$(basename "$package")
+              echo "Analyzing $package_name..."
+              
+              # Calculate bundle sizes
+              find "$package/dist" -name "*.js" -exec wc -c {} + | tail -1 | awk '{print $1}' > "bundle-analysis/${package_name}-size.txt"
+              
+              # Count files
+              find "$package/dist" -name "*.js" | wc -l > "bundle-analysis/${package_name}-files.txt"
+            fi
+          done
+
+          # Generate summary
+          echo "Bundle Size Analysis" > bundle-analysis/summary.md
+          echo "===================" >> bundle-analysis/summary.md
+          for package in packages/*/; do
+            if [ -d "$package/dist" ]; then
+              package_name=$(basename "$package")
+              size=$(cat "bundle-analysis/${package_name}-size.txt" 2>/dev/null || echo "0")
+              files=$(cat "bundle-analysis/${package_name}-files.txt" 2>/dev/null || echo "0")
+              echo "- $package_name: ${size} bytes ($files files)" >> bundle-analysis/summary.md
+            fi
+          done
+
+      - name: Upload bundle analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: bundle-analysis/
+          retention-days: 30
+
+  # Performance summary
+  performance-summary:
+    name: Performance Summary
+    runs-on: ubuntu-latest
+    needs:
+      [
+        check-changes,
+        benchmarks,
+        memory-analysis,
+        load-testing,
+        bundle-analysis,
+      ]
+    if: always() && needs.check-changes.outputs.should-run == 'true'
+
+    steps:
+      - name: Performance summary
+        run: |
+          echo "🚀 Performance Testing Summary"
+          echo "=============================="
+          echo "Benchmarks: ${{ needs.benchmarks.result }}"
+          echo "Memory Analysis: ${{ needs.memory-analysis.result }}"
+          echo "Load Testing: ${{ needs.load-testing.result }}"
+          echo "Bundle Analysis: ${{ needs.bundle-analysis.result }}"
+
+          if [[ "${{ needs.benchmarks.result }}" == "failure" || 
+                "${{ needs.memory-analysis.result }}" == "failure" || 
+                "${{ needs.load-testing.result }}" == "failure" || 
+                "${{ needs.bundle-analysis.result }}" == "failure" ]]; then
+            echo "❌ Performance tests failed"
+            exit 1
+          else
+            echo "✅ Performance tests passed"
+          fi

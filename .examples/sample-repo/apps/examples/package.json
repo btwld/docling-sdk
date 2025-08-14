@@ -1,0 +1,48 @@
+{
+  "name": "@nestjs-mcp/examples",
+  "version": "0.1.0",
+  "description": "Example applications for NestJS MCP",
+  "private": true,
+  "scripts": {
+    "build": "echo 'No build needed for examples'",
+    "dev": "echo 'Use specific example scripts'",
+    "test": "echo 'No tests for examples' && exit 0",
+    "lint": "eslint \"**/*.ts\" --fix",
+    "format": "prettier --write \"**/*.ts\"",
+    "clean": "echo 'No clean needed for examples'",
+    "example:streamable-http:server": "cd ../.. && pnpm exec ts-node apps/examples/transports/streamable-http-server.ts",
+    "example:streamable-http:client": "cd ../.. && pnpm exec ts-node apps/examples/transports/streamable-http-client.ts",
+    "example:sse:server": "cd ../.. && pnpm exec ts-node apps/examples/transports/sse-server.ts",
+    "example:sse:client": "cd ../.. && pnpm exec ts-node apps/examples/transports/sse-client.ts",
+    "example:websocket:server": "cd ../.. && pnpm exec ts-node apps/examples/transports/websocket-server.ts",
+    "example:websocket:client": "cd ../.. && pnpm exec ts-node apps/examples/transports/websocket-client.ts",
+    "example:decorators:server": "cd ../.. && pnpm exec ts-node --project apps/examples/tsconfig.json apps/examples/decorators/example-server.ts",
+    "example:decorators:client": "cd ../.. && pnpm exec ts-node apps/examples/decorators/example-client.ts",
+    "example:structured-output:server": "cd ../.. && pnpm exec ts-node apps/examples/structured-output/structured-output-server.ts",
+    "example:structured-output:client": "cd ../.. && pnpm exec ts-node apps/examples/structured-output/structured-output-client.ts",
+    "example:auth:server": "cd ../.. && pnpm exec ts-node apps/examples/auth/auth-server.ts",
+    "example:auth:client": "cd ../.. && pnpm exec ts-node apps/examples/auth/auth-client.ts",
+    "example:complete:streamable-http": "cd ../.. && pnpm exec ts-node apps/examples/complete/streamable-http-server.ts",
+    "example:complete:sse": "cd ../.. && pnpm exec ts-node apps/examples/complete/sse-server.ts",
+    "example:complete:client": "cd ../.. && pnpm exec ts-node apps/examples/complete/client.ts",
+    "example:auth-integration:server": "cd ../.. && pnpm exec ts-node apps/examples/auth-integration/main.ts",
+    "example:auth-integration:client": "cd ../.. && pnpm exec ts-node apps/examples/auth-integration/client.ts"
+  },
+  "dependencies": {
+    "@nest-mind/mcp-server": "workspace:*",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-express": "^11.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs-mcp/eslint-config": "workspace:*",
+    "@nestjs-mcp/typescript-config": "workspace:*",
+    "@types/node": "^22.10.7",
+    "prettier": "^3.4.2",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.3"
+  }
+}

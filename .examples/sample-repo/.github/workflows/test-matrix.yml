@@ -1,0 +1,164 @@
+name: Matrix Testing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Skip matrix testing for draft PRs unless explicitly requested
+  check-run-conditions:
+    name: Check Run Conditions
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+    steps:
+      - name: Check if should run
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.pull_request.draft }}" == "false" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ contains(github.event.pull_request.labels.*.name, 'test-matrix') }}" == "true" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-run=false" >> $GITHUB_OUTPUT
+          fi
+
+  matrix-test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    needs: check-run-conditions
+    if: needs.check-run-conditions.outputs.should-run == 'true'
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}-${{ matrix.node-version }}
+      cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18.x, 20.x, 22.x]
+        include:
+          # Add coverage reporting for one specific combination
+          - os: ubuntu-latest
+            node-version: 18.x
+            coverage: true
+          # Test with different pnpm versions on Ubuntu
+          - os: ubuntu-latest
+            node-version: 20.x
+            pnpm-version: 9
+        exclude:
+          # Skip some combinations to reduce CI time
+          - os: windows-latest
+            node-version: 22.x
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache-key-suffix: ${{ matrix.os }}-${{ matrix.node-version }}
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Install pnpm (custom version)
+        if: matrix.pnpm-version
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ matrix.pnpm-version }}
+          run_install: false
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test
+        env:
+          # Increase timeout for slower platforms
+          JEST_TIMEOUT: ${{ matrix.os == 'windows-latest' && '60000' || '30000' }}
+
+      - name: Run E2E tests
+        run: pnpm run test:e2e
+        env:
+          JEST_TIMEOUT: ${{ matrix.os == 'windows-latest' && '120000' || '60000' }}
+
+      - name: Upload coverage (Ubuntu + Node 18 only)
+        if: matrix.coverage == true && secrets.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          flags: matrix-test
+          name: matrix-${{ matrix.os }}-${{ matrix.node-version }}
+          fail_ci_if_error: false
+
+      - name: Coverage report (local)
+        if: matrix.coverage == true && secrets.CODECOV_TOKEN == ''
+        run: |
+          echo "📊 Matrix coverage report (Codecov token not configured):"
+          if [ -f coverage/lcov.info ]; then
+            echo "✅ Coverage report generated for ${{ matrix.os }}-${{ matrix.node-version }}"
+          else
+            echo "⚠️ No coverage report found"
+          fi
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-artifacts-${{ matrix.os }}-${{ matrix.node-version }}
+          path: |
+            coverage/
+            test-results/
+            screenshots/
+            logs/
+          retention-days: 3
+
+  # Aggregate results
+  matrix-test-results:
+    name: Matrix Test Results
+    runs-on: ubuntu-latest
+    needs: [check-run-conditions, matrix-test]
+    if: always() && needs.check-run-conditions.outputs.should-run == 'true'
+
+    steps:
+      - name: Check matrix test results
+        run: |
+          if [[ "${{ needs.matrix-test.result }}" == "failure" ]]; then
+            echo "❌ Matrix tests failed"
+            exit 1
+          elif [[ "${{ needs.matrix-test.result }}" == "cancelled" ]]; then
+            echo "⚠️ Matrix tests were cancelled"
+            exit 1
+          else
+            echo "✅ Matrix tests passed"
+          fi
+
+      - name: Report results
+        if: always()
+        run: |
+          echo "Matrix testing completed with result: ${{ needs.matrix-test.result }}"
+          echo "Total jobs in matrix: ${{ strategy.job-total }}"

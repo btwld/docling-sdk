@@ -1,0 +1,54 @@
+{
+  "name": "@nest-mind/mcp-core",
+  "version": "0.2.1",
+  "description": "Core types and utilities for NestJS MCP packages",
+  "author": "nest-mind",
+  "license": "MIT",
+  "keywords": [
+    "nestjs",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "llm",
+    "typescript",
+    "core",
+    "utilities"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:nest-mind/mcp.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/nest-mind/mcp/tree/main/packages/core",
+  "bugs": {
+    "url": "https://github.com/nest-mind/mcp/issues"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch",
+    "lint": "eslint \"src/**/*.ts\" --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.4",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@nestjs-mcp/eslint-config": "workspace:*",
+    "@nestjs-mcp/jest-config": "workspace:*",
+    "@nestjs-mcp/typescript-config": "workspace:*",
+    "@types/node": "^22.10.7",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  }
+}

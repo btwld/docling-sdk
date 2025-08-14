@@ -1,0 +1,74 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check for changeset
+        run: |
+          if [ "${{ github.event.pull_request.draft }}" = "true" ]; then
+            echo "Draft PR - skipping changeset check"
+            exit 0
+          fi
+
+          # Check if this is a release PR
+          if [[ "${{ github.event.pull_request.title }}" == *"release"* ]] || [[ "${{ github.event.pull_request.title }}" == *"chore: release packages"* ]]; then
+            echo "Release PR - skipping changeset check"
+            exit 0
+          fi
+
+          # Check for changeset files
+          if ! git diff --name-only origin/main...HEAD | grep -q "^\.changeset/.*\.md$"; then
+            echo "❌ No changeset found. Please run 'pnpm changeset' to add a changeset."
+            echo "This helps us track changes and generate release notes."
+            exit 1
+          else
+            echo "✅ Changeset found"
+          fi
+
+      - name: Validate package.json changes
+        run: |
+          # Check if package.json files have been modified
+          if git diff --name-only origin/main...HEAD | grep -q "package\.json$"; then
+            echo "⚠️  package.json files have been modified"
+            echo "Please ensure version changes are handled through changesets"
+            
+            # Check for version changes in package.json
+            if git diff origin/main...HEAD -- "**/package.json" | grep -q '"version"'; then
+              echo "❌ Direct version changes detected in package.json"
+              echo "Please use changesets for version management: pnpm changeset"
+              exit 1
+            fi
+          fi
+
+          echo "✅ Package.json validation passed"

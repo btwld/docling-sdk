@@ -1,0 +1,220 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Check what files changed to optimize CI
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.changes.outputs.core }}
+      server: ${{ steps.changes.outputs.server }}
+      examples: ${{ steps.changes.outputs.examples }}
+      tools: ${{ steps.changes.outputs.tools }}
+      docs: ${{ steps.changes.outputs.docs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            core:
+              - 'packages/core/**'
+            server:
+              - 'packages/server/**'
+            examples:
+              - 'apps/examples/**'
+            tools:
+              - 'tools/**'
+              - 'turbo.json'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            docs:
+              - 'docs/**'
+              - '*.md'
+
+  # Quality gates that run on all changes
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.server == 'true' || needs.changes.outputs.tools == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Check dependencies
+        run: |
+          # Check for dependency issues
+          pnpm audit --audit-level moderate
+
+          # TODO: Add syncpack when configured
+          # pnpm syncpack lint
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Type check
+        run: pnpm run check-types
+
+      # TODO: Re-enable when linting issues are fixed
+      # - name: Lint
+      #   run: pnpm run lint
+
+  # Build packages
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [changes, quality]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.server == 'true' || needs.changes.outputs.tools == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            packages/*/dist/
+            !packages/*/dist/**/*.map
+          retention-days: 1
+
+  # Unit tests
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [changes, build]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.server == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Run tests
+        run: pnpm run test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always() && secrets.CODECOV_TOKEN != ''
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+
+      - name: Coverage report (local)
+        if: always() && secrets.CODECOV_TOKEN == ''
+        run: |
+          echo "📊 Coverage report (Codecov token not configured):"
+          if [ -f coverage/lcov.info ]; then
+            echo "✅ Coverage report generated at coverage/lcov.info"
+          else
+            echo "⚠️ No coverage report found"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+          retention-days: 7
+
+  # E2E tests
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [changes, build]
+    if: needs.changes.outputs.server == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Run E2E tests
+        run: pnpm run test:e2e
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results
+          path: |
+            test-results/
+            screenshots/
+          retention-days: 7

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://unpkg.com/syncpack@12/dist/schema.json",
+  "versionGroups": [
+    {
+      "label": "Use workspace protocol for internal packages",
+      "packages": ["**"],
+      "dependencies": ["@nest-mind/mcp-*"],
+      "dependencyTypes": ["dev", "peer", "prod"],
+      "pinVersion": "workspace:*"
+    },
+    {
+      "label": "Pin NestJS packages to same version",
+      "packages": ["**"],
+      "dependencies": ["@nestjs/**"],
+      "dependencyTypes": ["dev", "peer", "prod"],
+      "policy": "sameRange"
+    },
+    {
+      "label": "Pin TypeScript to same version",
+      "packages": ["**"],
+      "dependencies": ["typescript"],
+      "dependencyTypes": ["dev"],
+      "policy": "sameRange"
+    },
+    {
+      "label": "Pin Jest packages to same version",
+      "packages": ["**"],
+      "dependencies": ["jest", "@types/jest", "ts-jest"],
+      "dependencyTypes": ["dev"],
+      "policy": "sameRange"
+    },
+    {
+      "label": "Pin ESLint packages to same version",
+      "packages": ["**"],
+      "dependencies": ["eslint", "@typescript-eslint/**"],
+      "dependencyTypes": ["dev"],
+      "policy": "sameRange"
+    }
+  ],
+  "semverGroups": [
+    {
+      "label": "Use exact versions for tools",
+      "packages": ["**"],
+      "dependencies": ["prettier", "turbo", "changesets"],
+      "dependencyTypes": ["dev"],
+      "range": ""
+    }
+  ],
+  "dependencyTypes": ["dev", "peer", "prod"],
+  "source": [
+    "package.json",
+    "packages/*/package.json",
+    "apps/*/package.json",
+    "tools/*/package.json"
+  ]
+}

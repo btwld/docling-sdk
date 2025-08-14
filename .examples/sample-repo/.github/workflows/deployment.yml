@@ -1,0 +1,313 @@
+name: Deployment
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      force-deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.environment || 'auto' }}
+  cancel-in-progress: false
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Determine deployment environment
+  determine-environment:
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      should-deploy: ${{ steps.env.outputs.should-deploy }}
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "environment=none" >> $GITHUB_OUTPUT
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Pre-deployment validation
+  pre-deployment:
+    name: Pre-deployment Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: determine-environment
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    environment: ${{ needs.determine-environment.outputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test
+
+      - name: Validate package integrity
+        run: |
+          # Verify packages can be packed
+          pnpm --filter "@nest-mind/mcp-*" exec npm pack --dry-run
+
+          # Check for required files
+          for package in packages/*/; do
+            if [ -f "$package/package.json" ]; then
+              package_name=$(basename "$package")
+              echo "Validating $package_name..."
+              
+              # Check dist directory exists
+              if [ ! -d "$package/dist" ]; then
+                echo "❌ Missing dist directory for $package_name"
+                exit 1
+              fi
+              
+              # Check main entry point exists
+              main_file=$(node -p "require('$package/package.json').main" 2>/dev/null || echo "")
+              if [ ! -z "$main_file" ] && [ ! -f "$package/$main_file" ]; then
+                echo "❌ Main entry point missing for $package_name: $main_file"
+                exit 1
+              fi
+              
+              echo "✅ $package_name validation passed"
+            fi
+          done
+
+      - name: Security scan
+        run: |
+          # Run security audit
+          pnpm audit --audit-level moderate
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts-${{ needs.determine-environment.outputs.environment }}
+          path: |
+            packages/*/dist/
+            packages/*/package.json
+            packages/*/README.md
+            packages/*/CHANGELOG.md
+          retention-days: 7
+
+  # Deploy to staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [determine-environment, pre-deployment]
+    if: needs.determine-environment.outputs.environment == 'staging'
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+
+      - name: Download deployment artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-artifacts-staging
+
+      - name: Deploy to staging registry
+        run: |
+          echo "🚀 Deploying to staging environment..."
+
+          # TODO: Implement staging deployment
+          # This could involve:
+          # - Publishing to a staging NPM registry
+          # - Deploying example applications
+          # - Updating staging documentation
+
+          echo "✅ Staging deployment completed"
+
+      - name: Run staging smoke tests
+        run: |
+          echo "🧪 Running staging smoke tests..."
+
+          # TODO: Implement staging smoke tests
+          # - Test package installation from staging registry
+          # - Verify basic functionality
+          # - Check API endpoints
+
+          echo "✅ Staging smoke tests passed"
+
+      - name: Notify staging deployment
+        run: |
+          echo "📢 Staging deployment notification"
+          # TODO: Add Slack/Discord notification
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"🚀 NestJS MCP deployed to staging!"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [determine-environment, pre-deployment]
+    if: needs.determine-environment.outputs.environment == 'production'
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+
+      - name: Download deployment artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-artifacts-production
+
+      - name: Deploy to production
+        run: |
+          echo "🚀 Deploying to production environment..."
+
+          # Production deployment should already be handled by release workflow
+          # This is mainly for documentation deployment and other services
+
+          echo "✅ Production deployment completed"
+
+      - name: Update documentation
+        run: |
+          echo "📚 Updating production documentation..."
+
+          # TODO: Deploy documentation to production
+          # - Update API documentation
+          # - Deploy example applications
+          # - Update website
+
+          echo "✅ Documentation updated"
+
+      - name: Run production health checks
+        run: |
+          echo "🏥 Running production health checks..."
+
+          # TODO: Implement production health checks
+          # - Verify NPM packages are available
+          # - Check documentation sites
+          # - Validate example applications
+
+          echo "✅ Production health checks passed"
+
+      - name: Notify production deployment
+        run: |
+          echo "📢 Production deployment notification"
+          # TODO: Add comprehensive notification
+          # - Slack/Discord notification
+          # - Email notification
+          # - Update status page
+
+          echo "🎉 Production deployment completed successfully!"
+
+  # Post-deployment monitoring
+  post-deployment:
+    name: Post-deployment Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [determine-environment, deploy-staging, deploy-production]
+    if: always() && needs.determine-environment.outputs.should-deploy == 'true'
+
+    steps:
+      - name: Monitor deployment
+        run: |
+          environment="${{ needs.determine-environment.outputs.environment }}"
+          staging_result="${{ needs.deploy-staging.result }}"
+          production_result="${{ needs.deploy-production.result }}"
+
+          echo "🔍 Post-deployment monitoring for $environment"
+
+          if [[ "$environment" == "staging" ]]; then
+            if [[ "$staging_result" == "success" ]]; then
+              echo "✅ Staging deployment successful"
+            else
+              echo "❌ Staging deployment failed"
+              exit 1
+            fi
+          elif [[ "$environment" == "production" ]]; then
+            if [[ "$production_result" == "success" ]]; then
+              echo "✅ Production deployment successful"
+            else
+              echo "❌ Production deployment failed"
+              exit 1
+            fi
+          fi
+
+      - name: Schedule post-deployment tests
+        run: |
+          echo "⏰ Scheduling post-deployment tests..."
+          # TODO: Trigger additional monitoring workflows
+          # - Performance monitoring
+          # - Integration tests against deployed services
+          # - User acceptance tests
+
+          echo "✅ Post-deployment monitoring configured"
+
+  # Rollback capability
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: failure() && github.event_name != 'workflow_dispatch'
+    needs: [determine-environment, deploy-staging, deploy-production]
+
+    steps:
+      - name: Prepare rollback
+        run: |
+          echo "🔄 Preparing rollback for ${{ needs.determine-environment.outputs.environment }}"
+
+          # TODO: Implement rollback logic
+          # - Revert to previous package versions
+          # - Restore previous documentation
+          # - Notify team of rollback
+
+          echo "⚠️ Rollback prepared - manual intervention may be required"

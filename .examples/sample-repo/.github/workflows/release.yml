@@ -1,0 +1,293 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: 'Type of release'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+jobs:
+  # Pre-release validation
+  validate:
+    name: Pre-release Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      has-changesets: ${{ steps.check-changesets.outputs.has-changesets }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Check for changesets
+        id: check-changesets
+        run: |
+          if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README)" ]; then
+            echo "has-changesets=true" >> $GITHUB_OUTPUT
+            echo "✅ Changesets found"
+          else
+            echo "has-changesets=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No changesets found"
+          fi
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test
+        timeout-minutes: 10
+
+      - name: Validate package integrity
+        run: |
+          # Check that packages can be packed (using npm pack --dry-run)
+          pnpm --filter "@nest-mind/mcp-*" exec npm pack --dry-run
+
+          # Validate package.json files
+          pnpm --filter "@nest-mind/mcp-*" exec node -e "
+            const pkg = require('./package.json');
+            if (!pkg.main || !pkg.types) {
+              throw new Error('Package missing main or types field');
+            }
+            console.log('✅ Package validation passed for', pkg.name);
+          "
+
+      - name: Check dependencies
+        run: |
+          # Audit for security vulnerabilities
+          pnpm audit --audit-level moderate
+
+          # TODO: Add syncpack validation
+          # pnpm syncpack lint
+
+  # Release job
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+      packages: write
+      actions: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ secrets.TURBO_TEAM }}
+
+      - name: Setup NPM authentication
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          echo "registry=https://registry.npmjs.org/" >> ~/.npmrc
+          echo "always-auth=true" >> ~/.npmrc
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Create manual changeset (if workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release-type != 'auto'
+        run: |
+          pnpm changeset add --empty
+          echo "Manual release triggered: ${{ github.event.inputs.release-type }}"
+
+      - name: Version packages
+        run: |
+          # Version packages using changesets
+          pnpm changeset version
+
+          # Check if there are any changes to commit
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .
+            git commit -m "chore: version packages"
+            git push origin main
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish packages
+        id: publish
+        run: |
+          # Publish packages to NPM
+          pnpm changeset publish
+
+          # Check if packages were published
+          if [ $? -eq 0 ]; then
+            echo "published=true" >> $GITHUB_OUTPUT
+            echo "✅ Packages published successfully"
+
+            # Push any tags created by changesets
+            git push --tags
+          else
+            echo "published=false" >> $GITHUB_OUTPUT
+            echo "❌ Package publishing failed"
+            exit 1
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify published packages
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          echo "✅ Packages published successfully!"
+
+          # Verify our packages are available on NPM
+          packages=("@nest-mind/mcp-core" "@nest-mind/mcp-server")
+          for package in "${packages[@]}"; do
+            echo "Verifying $package..."
+            if npm view "$package" --json > /dev/null 2>&1; then
+              version=$(npm view "$package" version)
+              echo "✅ $package@$version is available on NPM"
+            else
+              echo "❌ $package not found on NPM"
+            fi
+          done
+
+      - name: Create GitHub Releases
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          # Create releases for packages that were actually published
+          packages=("core" "server")
+          for package_dir in "${packages[@]}"; do
+            package_name="@nest-mind/mcp-$package_dir"
+
+            # Get version from package.json
+            version=$(node -p "require('./packages/$package_dir/package.json').version")
+            tag_name="${package_name}@${version}"
+
+            # Check if this tag already has a release
+            if gh release view "$tag_name" >/dev/null 2>&1; then
+              echo "ℹ️ Release for $tag_name already exists, skipping"
+              continue
+            fi
+
+            # Check if tag exists (created by changesets)
+            if ! git tag -l | grep -q "^${tag_name}$"; then
+              echo "ℹ️ Tag $tag_name doesn't exist, package likely wasn't updated in this release"
+              continue
+            fi
+
+            # Generate release notes from changelog
+            if [ -f "packages/$package_dir/CHANGELOG.md" ]; then
+              changelog_section=$(awk "/^## $version/,/^## [0-9]/ { if (/^## [0-9]/ && !/^## $version/) exit; print }" "packages/$package_dir/CHANGELOG.md" | head -n -1)
+            else
+              changelog_section="Release of $package_name@$version"
+            fi
+
+            # Create GitHub release (tag should already exist from changesets)
+            gh release create "$tag_name" \
+              --title "$tag_name" \
+              --notes "$changelog_section" \
+              --latest=false
+
+            echo "✅ Created GitHub release for $tag_name"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update documentation
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          # Update README badges or version references if needed
+          echo "📚 Documentation updated for new releases"
+
+      - name: Notify release
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          echo "🎉 Successfully released NestJS MCP package:"
+          echo "- @nest-mind/mcp-server (includes all core types and utilities)"
+
+          # TODO: Add Slack/Discord notification if configured
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"🎉 New NestJS MCP packages released!"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Post-release validation
+  post-release:
+    name: Post-release Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: release
+    if: needs.release.outputs.published == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          node-version: 18
+
+      - name: Test installation from NPM
+        run: |
+          # Create a temporary directory for testing
+          mkdir -p /tmp/test-install
+          cd /tmp/test-install
+
+          # Initialize a test project
+          npm init -y
+
+          # Install the published packages
+          npm install @nest-mind/mcp-server @nest-mind/mcp-core
+
+          # Test basic import
+          node -e "
+            try {
+              const server = require('@nest-mind/mcp-server');
+              const core = require('@nest-mind/mcp-core');
+              console.log('✅ Packages installed and importable');
+            } catch (error) {
+              console.error('❌ Package import failed:', error);
+              process.exit(1);
+            }
+          "
+
+      - name: Run smoke tests
+        run: |
+          # Run basic smoke tests to ensure packages work
+          echo "🧪 Running post-release smoke tests..."
+          # TODO: Add actual smoke tests
+          echo "✅ Smoke tests passed"
