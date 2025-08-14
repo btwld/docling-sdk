@@ -278,7 +278,7 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+BSD 3-Clause License - see [LICENSE](LICENSE) file for details.
 
 ## Related Projects
 
