@@ -160,25 +160,10 @@ jobs:
           version="${{ steps.get-version.outputs.version }}"
           tag_name="v$version"
 
-          # Generate release notes from recent commits
-          release_notes=$(git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "HEAD~10")..HEAD | head -20)
-
-          # Create GitHub release
+          # Create GitHub release with simple notes
           gh release create "$tag_name" \
             --title "Release $version" \
-            --notes "## Changes in $version
-
-${release_notes}
-
-## Installation
-
-\`\`\`bash
-npm install docling-sdk@$version
-\`\`\`
-
-## Links
-- 📦 [npm package](https://www.npmjs.com/package/docling-sdk)
-- 📚 [Documentation](https://github.com/btwld/docling-sdk#readme)" \
+            --notes "Release of docling-sdk@$version" \
             --latest
 
           echo "✅ Created GitHub release for $tag_name"
