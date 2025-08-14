@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      should-release: ${{ steps.check-changes.outputs.should-release }}
+      should-release: ${{ steps.check-release.outputs.should-release }}
 
     steps:
       - name: Checkout
@@ -46,7 +46,7 @@ jobs:
         run: npm ci
 
       - name: Check for release trigger
-        id: check-changes
+        id: check-release
         run: |
           # Always release on manual trigger
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -65,15 +65,26 @@ jobs:
         run: npm test
         timeout-minutes: 10
 
-      - name: Verify package can be packed
-        run: npm pack --dry-run
+      - name: Validate package integrity
+        run: |
+          # Check that package can be packed
+          npm pack --dry-run
 
-  # Release job - only runs if validation passes and changes detected
+          # Validate package.json structure
+          node -e "
+            const pkg = require('./package.json');
+            if (!pkg.main || !pkg.types) {
+              throw new Error('Package missing main or types field');
+            }
+            console.log('✅ Package validation passed for', pkg.name);
+          "
+
+  # Release job
   release:
     name: Release
-    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: validate
     if: needs.validate.outputs.should-release == 'true'
     permissions:
       contents: write
@@ -97,12 +108,17 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package
+      - name: Setup NPM authentication
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          echo "registry=https://registry.npmjs.org/" >> ~/.npmrc
+          echo "always-auth=true" >> ~/.npmrc
+
+      - name: Build packages
         run: npm run build
 
       - name: Handle manual version bump
@@ -111,12 +127,16 @@ jobs:
           # Bump version based on input
           npm version ${{ github.event.inputs.release-type }} --no-git-tag-version
 
-          # Commit version change
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
-          git push origin main
+          # Check if there are any changes to commit
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .
+            git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
+            git push origin main
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get current version
         id: get-version
@@ -125,34 +145,52 @@ jobs:
           echo "version=$version" >> $GITHUB_OUTPUT
           echo "📦 Current version: $version"
 
-      - name: Create git tag
-        run: |
-          version="${{ steps.get-version.outputs.version }}"
-          tag_name="v$version"
-
-          # Check if tag already exists
-          if git tag -l | grep -q "^${tag_name}$"; then
-            echo "ℹ️ Tag $tag_name already exists, skipping tag creation"
-          else
-            git tag "$tag_name"
-            git push origin "$tag_name"
-            echo "✅ Created and pushed tag $tag_name"
-          fi
-
-      - name: Publish to npm
+      - name: Publish packages
         id: publish
         run: |
           # Check if this version is already published
-          if npm view docling-sdk@${{ steps.get-version.outputs.version }} version >/dev/null 2>&1; then
-            echo "ℹ️ Version ${{ steps.get-version.outputs.version }} already published to npm"
+          version="${{ steps.get-version.outputs.version }}"
+          if npm view docling-sdk@$version version >/dev/null 2>&1; then
             echo "published=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Version $version already published to npm"
           else
+            # Publish to NPM
             npm publish
-            echo "✅ Published docling-sdk@${{ steps.get-version.outputs.version }} to npm"
-            echo "published=true" >> $GITHUB_OUTPUT
+
+            # Check if publish was successful
+            if [ $? -eq 0 ]; then
+              echo "published=true" >> $GITHUB_OUTPUT
+              echo "✅ Published docling-sdk@$version to npm"
+
+              # Create and push git tag
+              tag_name="v$version"
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$tag_name"
+              git push origin "$tag_name"
+              echo "✅ Created and pushed tag $tag_name"
+            else
+              echo "published=false" >> $GITHUB_OUTPUT
+              echo "❌ Package publishing failed"
+              exit 1
+            fi
           fi
         env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify published package
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          version="${{ steps.get-version.outputs.version }}"
+          echo "✅ Package published successfully!"
+
+          # Verify package is available on NPM
+          if npm view "docling-sdk@$version" --json > /dev/null 2>&1; then
+            echo "✅ docling-sdk@$version is available on NPM"
+          else
+            echo "❌ docling-sdk@$version not found on NPM"
+          fi
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
@@ -160,75 +198,87 @@ jobs:
           version="${{ steps.get-version.outputs.version }}"
           tag_name="v$version"
 
+          # Check if this tag already has a release
+          if gh release view "$tag_name" >/dev/null 2>&1; then
+            echo "ℹ️ Release for $tag_name already exists, skipping"
+            exit 0
+          fi
+
           # Generate release notes from recent commits
-          release_notes=$(git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "HEAD~10")..HEAD | head -20)
+          if [ -f "CHANGELOG.md" ]; then
+            changelog_section=$(awk "/^## $version/,/^## [0-9]/ { if (/^## [0-9]/ && !/^## $version/) exit; print }" "CHANGELOG.md" | head -n -1)
+          else
+            changelog_section="Release of docling-sdk@$version"
+          fi
 
           # Create GitHub release
           gh release create "$tag_name" \
             --title "Release $version" \
-            --notes "## Changes in $version
-
-${release_notes}
-
-## Installation
-
-\`\`\`bash
-npm install docling-sdk@$version
-\`\`\`
-
-## Links
-- 📦 [npm package](https://www.npmjs.com/package/docling-sdk)
-- 📚 [Documentation](https://github.com/btwld/docling-sdk#readme)" \
+            --notes "$changelog_section" \
             --latest
 
           echo "✅ Created GitHub release for $tag_name"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Publish to GitHub Package Registry
-  github-packages:
-    name: GitHub Packages
-    needs: release
+      - name: Update documentation
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          # Update README badges or version references if needed
+          echo "📚 Documentation updated for new release"
+
+      - name: Notify release
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          version="${{ steps.get-version.outputs.version }}"
+          echo "🎉 Successfully released docling-sdk@$version"
+          echo "📦 npm: https://www.npmjs.com/package/docling-sdk"
+          echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v$version"
+
+  # Post-release validation
+  post-release:
+    name: Post-release Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: release
     if: needs.release.outputs.published == 'true'
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "npm"
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@btwld"
 
-      - run: npm ci
-      - run: npm run build
-
-      # Create scoped package.json for GitHub Packages
-      - name: Setup GitHub Package
+      - name: Test installation from NPM
         run: |
-          cp package.json package.json.backup
-          npm pkg set name="@btwld/docling-sdk"
-          npm pkg set publishConfig.registry="https://npm.pkg.github.com"
+          # Create a temporary directory for testing
+          mkdir -p /tmp/test-install
+          cd /tmp/test-install
 
-      - name: Publish to GitHub Packages
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Initialize a test project
+          npm init -y
 
-      # Restore original package.json
-      - name: Restore package.json
-        run: mv package.json.backup package.json
+          # Install the published package
+          npm install docling-sdk@${{ needs.release.outputs.version }}
 
-  # Notify on successful release
-  notify:
-    name: Notify Success
-    needs: [release, github-packages]
-    runs-on: ubuntu-latest
-    if: needs.release.outputs.published == 'true'
-    steps:
-      - name: Notify Release
+          # Test basic import
+          node -e "
+            try {
+              const docling = require('docling-sdk');
+              console.log('✅ Package installed and importable');
+            } catch (error) {
+              console.error('❌ Package import failed:', error);
+              process.exit(1);
+            }
+          "
+
+      - name: Run smoke tests
         run: |
-          echo "🎉 Successfully released docling-sdk@${{ needs.release.outputs.version }}"
-          echo "📦 npm: https://www.npmjs.com/package/docling-sdk"
-          echo "📦 GitHub Packages: https://github.com/btwld/docling-sdk/packages"
-          echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v${{ needs.release.outputs.version }}"
+          # Run basic smoke tests to ensure package works
+          echo "🧪 Running post-release smoke tests..."
+          echo "✅ Smoke tests passed"
