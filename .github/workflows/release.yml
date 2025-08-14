@@ -18,14 +18,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
-  packages: write
-  actions: write
+  cancel-in-progress: false
 
 jobs:
   # Pre-release validation
@@ -52,28 +45,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check for version changes
+      - name: Check for release trigger
         id: check-changes
         run: |
-          # Check if this is a manual release
+          # Always release on manual trigger
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should-release=true" >> $GITHUB_OUTPUT
             echo "✅ Manual release triggered"
-            exit 0
-          fi
-
-          # Check if package.json version changed in this push
-          if git diff HEAD~1 HEAD --name-only | grep -q "package.json"; then
-            if git diff HEAD~1 HEAD package.json | grep -q '"version"'; then
-              echo "should-release=true" >> $GITHUB_OUTPUT
-              echo "✅ Version change detected in package.json"
-            else
-              echo "should-release=false" >> $GITHUB_OUTPUT
-              echo "ℹ️ No version change in package.json"
-            fi
           else
-            echo "should-release=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ No package.json changes"
+            # For push events, always allow release (version will be handled in release job)
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Push to main - ready for release"
           fi
 
       - name: Build packages
@@ -91,7 +73,14 @@ jobs:
     name: Release
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: needs.validate.outputs.should-release == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+      packages: write
+      actions: write
     outputs:
       published: ${{ steps.publish.outputs.published }}
       version: ${{ steps.get-version.outputs.version }}
