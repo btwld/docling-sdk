@@ -52,10 +52,28 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should-release=true" >> $GITHUB_OUTPUT
             echo "✅ Manual release triggered"
-          else
-            # For push events, always allow release (version will be handled in release job)
+            exit 0
+          fi
+
+          # For push events, check if we should auto-release
+          # Look for conventional commit patterns or specific keywords
+          recent_commits=$(git log --pretty=format:"%s" HEAD~5..HEAD)
+
+          # Check for conventional commit types that should trigger release
+          if echo "$recent_commits" | grep -qE "^(feat|fix|perf|refactor)(\(.+\))?: "; then
             echo "should-release=true" >> $GITHUB_OUTPUT
-            echo "✅ Push to main - ready for release"
+            echo "✅ Found conventional commits - triggering auto-release"
+          # Check for explicit release keywords
+          elif echo "$recent_commits" | grep -qiE "(release|publish|bump version)"; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Found release keywords - triggering auto-release"
+          # Check if this is a merge commit from a PR
+          elif echo "$recent_commits" | grep -qE "^Merge pull request #[0-9]+"; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "✅ PR merge detected - triggering auto-release"
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No release triggers found - skipping release"
           fi
 
       - name: Build packages
@@ -105,17 +123,44 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Handle manual version bump
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release-type != 'auto'
+      - name: Determine version bump type
+        id: version-type
         run: |
-          # Bump version based on input
-          npm version ${{ github.event.inputs.release-type }} --no-git-tag-version
+          # For manual releases, use the input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.release-type }}" != "auto" ]; then
+            echo "bump-type=${{ github.event.inputs.release-type }}" >> $GITHUB_OUTPUT
+            echo "✅ Manual release: ${{ github.event.inputs.release-type }}"
+            exit 0
+          fi
+
+          # For automatic releases, analyze commits to determine bump type
+          recent_commits=$(git log --pretty=format:"%s" HEAD~10..HEAD)
+
+          # Check for breaking changes (major)
+          if echo "$recent_commits" | grep -qE "^.+!: |BREAKING CHANGE"; then
+            echo "bump-type=major" >> $GITHUB_OUTPUT
+            echo "✅ Breaking changes detected - major release"
+          # Check for new features (minor)
+          elif echo "$recent_commits" | grep -qE "^feat(\(.+\))?: "; then
+            echo "bump-type=minor" >> $GITHUB_OUTPUT
+            echo "✅ New features detected - minor release"
+          # Default to patch for fixes and other changes
+          else
+            echo "bump-type=patch" >> $GITHUB_OUTPUT
+            echo "✅ Fixes/changes detected - patch release"
+          fi
+
+      - name: Bump version
+        run: |
+          # Bump version based on determined type
+          bump_type="${{ steps.version-type.outputs.bump-type }}"
+          npm version $bump_type --no-git-tag-version
 
           # Commit version change
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
-          git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
+          git commit -m "chore: bump version to $(node -p "require('./package.json').version") [$bump_type]"
           git push origin main
 
       - name: Get current version
