@@ -15,6 +15,7 @@ permissions:
   pull-requests: write
   id-token: write
   packages: write
+  actions: write
 
 jobs:
   # Run tests before release
@@ -66,6 +67,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GIT_AUTHOR_NAME: semantic-release-bot
+          GIT_AUTHOR_EMAIL: semantic-release-bot@martynus.net
+          GIT_COMMITTER_NAME: semantic-release-bot
+          GIT_COMMITTER_EMAIL: semantic-release-bot@martynus.net
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # Optional: Notify on successful release
