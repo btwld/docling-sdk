@@ -240,18 +240,29 @@ const customResult = await client.convert(buffer, "document.pdf", {
 
 ## Releases
 
-This repo uses semantic-release for automated versioning, changelog, GitHub releases, and npm publish.
+This repo uses github-actions[bot] for automated versioning, changelog, GitHub releases, and npm publish.
 
-- Branches:
-  - main → stable releases to npm (dist-tag: latest)
-  - next → prereleases (e.g., 0.0.1-dev.1) to npm (dist-tag: next)
+### Automatic Releases
+
+- Triggers when `package.json` version changes on main branch
+- Validates, tests, builds, and publishes automatically
+- Creates GitHub releases with changelog
+
+### Manual Releases
+
+- Go to **Actions** → **Release** workflow → **"Run workflow"**
+- Choose patch/minor/major version bump
+- github-actions[bot] handles version bump, tagging, and publishing
+
+### Conventional Commits
+
 - PRs: use Conventional Commits in PR titles (feat:, fix:, feat!: for breaking)
-- CI: on push to main/next, a release is cut if commits warrant it
+- Helps generate meaningful changelogs and release notes
 
 Setup required:
 
 - Add NPM_TOKEN secret in GitHub (Settings → Secrets → Actions)
-- The workflow uses GITHUB_TOKEN for GitHub releases
+- The workflow uses GITHUB_TOKEN for GitHub releases and github-actions[bot] identity
 
 ## Development
 
