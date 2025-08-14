@@ -12,6 +12,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # Conventional commit types for better changelog generation
           types: |
             build
             chore
@@ -24,3 +25,11 @@ jobs:
             revert
             style
             test
+          # Allow any scope
+          requireScope: false
+          # Custom subject pattern - allow any descriptive text
+          subjectPattern: ^.{1,100}$
+          subjectPatternError: |
+            The subject "{subject}" found in the pull request title "{title}"
+            didn't match the configured pattern. Please ensure that the subject
+            doesn't start with an uppercase character and is descriptive.

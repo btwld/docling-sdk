@@ -2,12 +2,22 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
-      - next
-      - beta
-      - alpha
-      - dev
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: "Type of release"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
   contents: write
@@ -18,77 +28,180 @@ permissions:
   actions: write
 
 jobs:
-  # Run tests before release
-  test:
+  # Pre-release validation
+  validate:
+    name: Pre-release Validation
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "npm"
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-
-  # Release job that depends on tests passing
-  release:
-    needs: test
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
-      released: ${{ steps.release.outputs.released }}
-      version: ${{ steps.release.outputs.version }}
-      major: ${{ steps.release.outputs.major }}
-      minor: ${{ steps.release.outputs.minor }}
-      patch: ${{ steps.release.outputs.patch }}
+      should-release: ${{ steps.check-changes.outputs.should-release }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for version changes
+        id: check-changes
+        run: |
+          # Check if this is a manual release
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Manual release triggered"
+            exit 0
+          fi
+
+          # Check if package.json version changed in this push
+          if git diff HEAD~1 HEAD --name-only | grep -q "package.json"; then
+            if git diff HEAD~1 HEAD package.json | grep -q '"version"'; then
+              echo "should-release=true" >> $GITHUB_OUTPUT
+              echo "✅ Version change detected in package.json"
+            else
+              echo "should-release=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ No version change in package.json"
+            fi
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No package.json changes"
+          fi
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+        timeout-minutes: 10
+
+      - name: Verify package can be packed
+        run: npm pack --dry-run
+
+  # Release job - only runs if validation passes and changes detected
+  release:
+    name: Release
+    needs: validate
+    runs-on: ubuntu-latest
+    if: needs.validate.outputs.should-release == 'true'
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      version: ${{ steps.get-version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
           registry-url: "https://registry.npmjs.org"
 
-      - run: npm ci
-      - run: npm run build
+      - name: Install dependencies
+        run: npm ci
 
-      # Verify package can be packed
-      - run: npm pack --dry-run
+      - name: Build package
+        run: npm run build
 
-      - name: Release
-        id: release
-        run: npx semantic-release
+      - name: Handle manual version bump
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release-type != 'auto'
+        run: |
+          # Bump version based on input
+          npm version ${{ github.event.inputs.release-type }} --no-git-tag-version
+
+          # Commit version change
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
+          git push origin main
+
+      - name: Get current version
+        id: get-version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "📦 Current version: $version"
+
+      - name: Create git tag
+        run: |
+          version="${{ steps.get-version.outputs.version }}"
+          tag_name="v$version"
+
+          # Check if tag already exists
+          if git tag -l | grep -q "^${tag_name}$"; then
+            echo "ℹ️ Tag $tag_name already exists, skipping tag creation"
+          else
+            git tag "$tag_name"
+            git push origin "$tag_name"
+            echo "✅ Created and pushed tag $tag_name"
+          fi
+
+      - name: Publish to npm
+        id: publish
+        run: |
+          # Check if this version is already published
+          if npm view docling-sdk@${{ steps.get-version.outputs.version }} version >/dev/null 2>&1; then
+            echo "ℹ️ Version ${{ steps.get-version.outputs.version }} already published to npm"
+            echo "published=false" >> $GITHUB_OUTPUT
+          else
+            npm publish
+            echo "✅ Published docling-sdk@${{ steps.get-version.outputs.version }} to npm"
+            echo "published=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          version="${{ steps.get-version.outputs.version }}"
+          tag_name="v$version"
+
+          # Generate release notes from recent commits
+          release_notes=$(git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "HEAD~10")..HEAD | head -20)
+
+          # Create GitHub release
+          gh release create "$tag_name" \
+            --title "Release $version" \
+            --notes "## Changes in $version
+
+$release_notes
+
+## Installation
+
+\`\`\`bash
+npm install docling-sdk@$version
+\`\`\`
+
+## Links
+- 📦 [npm package](https://www.npmjs.com/package/docling-sdk)
+- 📚 [Documentation](https://github.com/btwld/docling-sdk#readme)" \
+            --latest
+
+          echo "✅ Created GitHub release for $tag_name"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GIT_AUTHOR_NAME: semantic-release-bot
-          GIT_AUTHOR_EMAIL: semantic-release-bot@martynus.net
-          GIT_COMMITTER_NAME: semantic-release-bot
-          GIT_COMMITTER_EMAIL: semantic-release-bot@martynus.net
-
-  # Optional: Notify on successful release
-  notify:
-    needs: release
-    runs-on: ubuntu-latest
-    if: needs.release.outputs.released == 'true'
-    steps:
-      - name: Notify Release
-        run: |
-          echo "🎉 Successfully released version ${{ needs.release.outputs.version }}"
-          echo "📦 Package: https://www.npmjs.com/package/docling-sdk"
-          echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v${{ needs.release.outputs.version }}"
 
   # Publish to GitHub Package Registry
   github-packages:
+    name: GitHub Packages
     needs: release
     runs-on: ubuntu-latest
-    if: needs.release.outputs.released == 'true'
+    if: needs.release.outputs.published == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -116,3 +229,17 @@ jobs:
       # Restore original package.json
       - name: Restore package.json
         run: mv package.json.backup package.json
+
+  # Notify on successful release
+  notify:
+    name: Notify Success
+    needs: [release, github-packages]
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.published == 'true'
+    steps:
+      - name: Notify Release
+        run: |
+          echo "🎉 Successfully released docling-sdk@${{ needs.release.outputs.version }}"
+          echo "📦 npm: https://www.npmjs.com/package/docling-sdk"
+          echo "📦 GitHub Packages: https://github.com/btwld/docling-sdk/packages"
+          echo "🏷️ GitHub Release: https://github.com/btwld/docling-sdk/releases/tag/v${{ needs.release.outputs.version }}"

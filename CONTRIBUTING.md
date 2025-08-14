@@ -68,27 +68,46 @@ docs(readme): update installation instructions
 
 ### Release Process
 
-Releases are **fully automated** using semantic-release:
+Releases are **fully automated** using github-actions[bot]:
 
-1. **Patch Release** (`1.0.0` → `1.0.1`)
+#### **Automatic Releases**
 
-   ```bash
-   git commit -m "fix: resolve memory leak in file processing"
-   ```
+When you change the version in `package.json` and push to main:
 
-2. **Minor Release** (`1.0.0` → `1.1.0`)
+```bash
+# Update version in package.json
+npm version patch  # or minor, major
+git push origin main
+# → Automatic release triggered
+```
 
-   ```bash
-   git commit -m "feat: add new OCR engine support"
-   ```
+#### **Manual Releases**
 
-3. **Major Release** (`1.0.0` → `2.0.0`)
+Use GitHub Actions UI for controlled releases:
 
-   ```bash
-   git commit -m "feat!: redesign API interface
+1. Go to **Actions** → **Release** workflow
+2. Click **"Run workflow"**
+3. Choose release type:
+   - **patch**: `1.0.0` → `1.0.1` (bug fixes)
+   - **minor**: `1.0.0` → `1.1.0` (new features)
+   - **major**: `1.0.0` → `2.0.0` (breaking changes)
 
-   BREAKING CHANGE: The API interface has been completely redesigned"
-   ```
+#### **Conventional Commits**
+
+Use conventional commit messages for better changelogs:
+
+```bash
+# Patch release triggers
+git commit -m "fix: resolve memory leak in file processing"
+
+# Minor release triggers
+git commit -m "feat: add new OCR engine support"
+
+# Major release triggers
+git commit -m "feat!: redesign API interface
+
+BREAKING CHANGE: The API interface has been completely redesigned"
+```
 
 ### Package Ownership
 
