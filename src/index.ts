@@ -31,11 +31,24 @@ export type {
   DoclingAPIConfig,
   DoclingCLIConfig,
   DoclingClient as IDoclingClient,
-  DoclingAPI as IDoclingAPIClient,
-  DoclingCLI as IDoclingCLIClient,
+  DoclingAPI,
+  DoclingCLI,
   DoclingClientBase,
   DoclingInstance,
+  ProgressConfig,
+  ProgressUpdate,
+  SafeConversionResult,
+  SafeFileConversionResult,
 } from "./types/client";
+
+// Export the actual client classes for type usage
+export type { DoclingAPIClient } from "./clients/api-client";
+export type { DoclingCLIClient } from "./clients/cli-client";
+
+// Convenience type for API client instances
+export type DoclingAPIClientType = InstanceType<
+  typeof import("./clients/api-client").DoclingAPIClient
+>;
 
 export { ZodValidation } from "./validation/schemas";
 
