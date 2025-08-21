@@ -160,6 +160,11 @@ export interface DoclingCLIConfig extends DoclingSharedConfig {
  */
 export interface DoclingClientBase {
   /**
+   * Client type identifier
+   */
+  readonly type: "api" | "cli";
+
+  /**
    * Convert document to various formats
    */
   convert(
@@ -247,6 +252,11 @@ export interface DoclingClientBase {
  */
 export interface DoclingAPI extends DoclingClientBase {
   /**
+   * File service for handling file operations
+   */
+  readonly files: FileService;
+
+  /**
    * Convert using SYNC endpoint (fast JSON responses)
    */
   convertSync(
@@ -327,11 +337,6 @@ export interface DoclingAPI extends DoclingClientBase {
     options: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConversionFileResult>;
-
-  /**
-   * Access to file service for advanced operations
-   */
-  readonly files: FileService;
 
   /**
    * Get task manager for EventEmitter access
