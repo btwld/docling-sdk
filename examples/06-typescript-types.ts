@@ -1,12 +1,15 @@
 /**
  * Example: Using TypeScript Types with Docling SDK
- * 
- * This example demonstrates how to properly type your Docling clients
- * for better type safety and IDE support.
+ *
+ * Demonstrates proper typing for Docling clients with full type safety.
  */
 
 import { Docling } from "../src";
-import type { DoclingAPI, DoclingAPIClient, DoclingAPIClientType } from "../src";
+import type {
+  DoclingAPI,
+  DoclingAPIClient,
+  DoclingAPIClientType,
+} from "../src";
 
 // Example 1: Using the DoclingAPI interface for dependency injection
 class DocumentProcessor {
@@ -90,7 +93,9 @@ class DocumentService {
         {
           method: "websocket",
           onProgress: (progress) => {
-            console.log(`Progress: ${progress.stage} - ${progress.percentage}%`);
+            console.log(
+              `Progress: ${progress.stage} - ${progress.percentage}%`
+            );
           },
         }
       );
@@ -131,9 +136,7 @@ class DocumentService {
   }
 }
 
-// Example usage
 async function main() {
-  // Create a properly typed client
   const client = new Docling({
     api: {
       baseUrl: process.env.DOCLING_URL || "http://localhost:5001",
@@ -141,10 +144,7 @@ async function main() {
     },
   });
 
-  // Use with service class
   const service = new DocumentService(client);
-  
-  // Use with processor
   const processor = new DocumentProcessor(client);
 
   console.log("✅ All types are properly configured!");
@@ -153,7 +153,6 @@ async function main() {
   console.log("⚙️ Processor ready:", !!processor);
 }
 
-// Export for use in other examples
 export {
   DocumentProcessor,
   DocumentService,
@@ -162,8 +161,6 @@ export {
   processWithClient,
   main,
 };
-
-// Run if called directly
 if (require.main === module) {
   main().catch(console.error);
 }
