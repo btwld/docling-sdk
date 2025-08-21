@@ -53,9 +53,26 @@ jobs:
             echo "should-release=true" >> $GITHUB_OUTPUT
             echo "✅ Manual release triggered"
           else
-            # For push events, always allow release (version will be handled in release job)
-            echo "should-release=true" >> $GITHUB_OUTPUT
-            echo "✅ Push to main - ready for release"
+            # For push events, check if there are releasable changes
+            last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$last_tag" ]; then
+              commits=$(git log $last_tag..HEAD --pretty=format:"%s")
+            else
+              commits=$(git log --pretty=format:"%s")
+            fi
+
+            # Check for releasable commits (skip version bump commits)
+            releasable_commits=$(echo "$commits" | grep -v "chore: bump version\|\\[skip ci\\]" || true)
+
+            if [ -n "$releasable_commits" ]; then
+              echo "should-release=true" >> $GITHUB_OUTPUT
+              echo "✅ Found releasable changes since last release"
+              echo "📝 Changes:"
+              echo "$releasable_commits"
+            else
+              echo "should-release=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ No releasable changes found - skipping release"
+            fi
           fi
 
       - name: Build packages
@@ -105,25 +122,79 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Handle manual version bump
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release-type != 'auto'
+      - name: Determine version bump type
+        id: version-bump
         run: |
-          # Bump version based on input
-          npm version ${{ github.event.inputs.release-type }} --no-git-tag-version
+          # Get commits since last tag (or all commits if no tags)
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$last_tag" ]; then
+            commits=$(git log $last_tag..HEAD --pretty=format:"%s")
+            echo "📝 Commits since $last_tag:"
+          else
+            commits=$(git log --pretty=format:"%s")
+            echo "📝 All commits (no previous tags):"
+          fi
+          echo "$commits"
 
-          # Commit version change
+          # Determine bump type based on conventional commits
+          bump_type="patch"  # Default
+
+          if echo "$commits" | grep -q "BREAKING CHANGE\|!:"; then
+            bump_type="major"
+            echo "🔥 Found breaking changes → major bump"
+          elif echo "$commits" | grep -q "^feat"; then
+            bump_type="minor"
+            echo "✨ Found new features → minor bump"
+          elif echo "$commits" | grep -q "^fix\|^chore\|^docs\|^style\|^refactor\|^perf\|^test"; then
+            bump_type="patch"
+            echo "🐛 Found fixes/chores → patch bump"
+          else
+            bump_type="patch"
+            echo "📦 No conventional commits found → patch bump"
+          fi
+
+          # Override with manual input if provided
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.release-type }}" != "auto" ]; then
+            bump_type="${{ github.event.inputs.release-type }}"
+            echo "🔧 Manual override: using $bump_type"
+          fi
+
+          echo "bump-type=$bump_type" >> $GITHUB_OUTPUT
+          echo "📈 Final bump type: $bump_type"
+
+      - name: Bump version automatically
+        id: bump-version
+        run: |
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Get current version
+          current_version=$(node -p "require('./package.json').version")
+          echo "📦 Current version: $current_version"
+
+          # Bump version
+          bump_type="${{ steps.version-bump.outputs.bump-type }}"
+          npm version $bump_type --no-git-tag-version
+
+          # Get new version
+          new_version=$(node -p "require('./package.json').version")
+          echo "📦 New version: $new_version"
+          echo "new-version=$new_version" >> $GITHUB_OUTPUT
+
+          # Commit version change
           git add package.json package-lock.json
-          git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
+          git commit -m "chore: bump version to $new_version [skip ci]"
           git push origin main
+
+          echo "✅ Version bumped from $current_version to $new_version"
 
       - name: Get current version
         id: get-version
         run: |
-          version=$(node -p "require('./package.json').version")
+          version="${{ steps.bump-version.outputs.new-version }}"
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo "📦 Current version: $version"
+          echo "📦 Using version: $version"
 
       - name: Create git tag
         run: |
