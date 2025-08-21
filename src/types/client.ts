@@ -4,15 +4,25 @@ import type { FileService } from "../services/file";
 import type { Result } from "../utils/result";
 import type {
   AcceleratorOptions,
+  AsyncConversionTask,
   ConversionFileResult,
   ConversionOptions,
   ConversionResult,
+  ConversionTarget,
+  ConvertDocumentResponse,
+  ConvertDocumentsRequest,
+  FileSource,
+  FileUploadParams,
+  HealthCheckResponse,
+  HttpSource,
   LayoutOptions,
   OcrEngine,
   OcrOptions,
   PdfBackend,
   ProcessingPipeline,
+  S3Source,
   TableMode,
+  TaskStatusResponse,
 } from "./api";
 
 /**
@@ -327,6 +337,111 @@ export interface DoclingAPI extends DoclingClientBase {
    * Get task manager for EventEmitter access
    */
   getTaskManager(): AsyncTaskManager;
+
+  // Core API methods
+  /**
+   * Check API health status
+   */
+  health(): Promise<HealthCheckResponse>;
+
+  /**
+   * Convert documents from URLs or base64 sources (synchronous)
+   */
+  convertSource(
+    request: ConvertDocumentsRequest
+  ): Promise<ConvertDocumentResponse>;
+
+  /**
+   * Convert uploaded files (synchronous)
+   */
+  convertFile(params: FileUploadParams): Promise<ConvertDocumentResponse>;
+
+  /**
+   * Convert documents from URLs or base64 sources (asynchronous)
+   */
+  convertSourceAsync(
+    request: ConvertDocumentsRequest
+  ): Promise<AsyncConversionTask>;
+
+  /**
+   * Convert uploaded files (asynchronous)
+   */
+  convertFileAsync(params: FileUploadParams): Promise<AsyncConversionTask>;
+
+  /**
+   * Poll task status
+   */
+  pollTaskStatus(taskId: string): Promise<TaskStatusResponse>;
+
+  /**
+   * Get task result
+   */
+  getTaskResult(taskId: string): Promise<ConvertDocumentResponse>;
+
+  /**
+   * Get task result as a ZIP file stream
+   */
+  getTaskResultFile(taskId: string): Promise<ConversionFileResult>;
+
+  // Convenience conversion methods
+  /**
+   * Convert from URL with progress monitoring
+   */
+  convertFromUrl(
+    url: string,
+    options?: ConversionOptions,
+    headers?: Record<string, string>
+  ): Promise<ConversionResult>;
+
+  /**
+   * Convert from file path
+   */
+  convertFromFile(
+    filePath: string,
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
+
+  /**
+   * Convert from buffer
+   */
+  convertFromBuffer(
+    buffer: Buffer,
+    filename: string,
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
+
+  /**
+   * Convert from base64 string
+   */
+  convertFromBase64(
+    base64String: string,
+    filename: string,
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
+
+  /**
+   * Convert from S3 source
+   */
+  convertFromS3(
+    s3Config: {
+      bucket: string;
+      key: string;
+      region?: string;
+      access_key_id?: string;
+      secret_access_key?: string;
+      session_token?: string;
+    },
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
+
+  /**
+   * Convert with custom target (S3, PUT, etc.)
+   */
+  convertWithTarget(
+    sources: (HttpSource | FileSource | S3Source)[],
+    target: ConversionTarget,
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
 }
 
 /**
