@@ -47,6 +47,10 @@ export type DoclingAPIClientType = InstanceType<
   typeof import("./clients/api-client").DoclingAPIClient
 >;
 
+// Alias exports for common naming patterns
+export type { DoclingAPI as IDoclingAPIClient } from "./types/client";
+export type { DoclingCLI as IDoclingCLIClient } from "./types/client";
+
 export { ZodValidation } from "./validation/schemas";
 
 export { default } from "./docling";
