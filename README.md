@@ -45,6 +45,7 @@ npm install @btwld/docling-sdk
 [![GitHub release](https://img.shields.io/github/release/btwld/docling-sdk.svg)](https://github.com/btwld/docling-sdk/releases)
 [![npm downloads](https://img.shields.io/npm/dm/docling-sdk.svg)](https://www.npmjs.com/package/docling-sdk)
 [![GitHub Package Registry](https://img.shields.io/badge/GitHub-Package%20Registry-blue?logo=github)](https://github.com/btwld/docling-sdk/packages)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/btwld/docling-sdk)
 [![License](https://img.shields.io/npm/l/docling-sdk.svg)](https://github.com/btwld/docling-sdk/blob/main/LICENSE)
 
 ## Quick Start
