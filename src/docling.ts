@@ -1,10 +1,6 @@
 import { DoclingAPIClient } from "./clients/api-client";
 import { DoclingCLIClient } from "./clients/cli-client";
-import type {
-  DoclingAPIConfig,
-  DoclingCLIConfig,
-  DoclingConfig,
-} from "./types/client";
+import type { DoclingAPIConfig, DoclingCLIConfig, DoclingConfig } from "./types/client";
 import { isAPIConfig, isCLIConfig } from "./types/client";
 
 type ApiVariant = Extract<DoclingConfig, { api: unknown }>;
@@ -38,9 +34,7 @@ class DoclingImpl {
       return new DoclingCLIClient(cliConfig);
     }
 
-    throw new Error(
-      "Invalid configuration: must specify either 'api' or 'cli' configuration"
-    );
+    throw new Error("Invalid configuration: must specify either 'api' or 'cli' configuration");
   }
 }
 
@@ -59,10 +53,9 @@ function omit<T extends object, K extends readonly (keyof T)[]>(
   return result as Omit<T, K[number]>;
 }
 
-export type DoclingClientType<T extends DoclingConfig> =
-  T extends DoclingAPIConfig
-    ? DoclingAPIClient
-    : T extends DoclingCLIConfig
+export type DoclingClientType<T extends DoclingConfig> = T extends DoclingAPIConfig
+  ? DoclingAPIClient
+  : T extends DoclingCLIConfig
     ? DoclingCLIClient
     : never;
 

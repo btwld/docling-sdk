@@ -22,32 +22,17 @@ export type InputFormat =
 /**
  * Output formats supported by Docling
  */
-export type OutputFormat =
-  | "md"
-  | "json"
-  | "html"
-  | "html_split_page"
-  | "text"
-  | "doctags";
+export type OutputFormat = "md" | "json" | "html" | "html_split_page" | "text" | "doctags";
 
 /**
  * OCR engines available
  */
-export type OcrEngine =
-  | "easyocr"
-  | "tesserocr"
-  | "tesseract"
-  | "rapidocr"
-  | "ocrmac";
+export type OcrEngine = "easyocr" | "tesserocr" | "tesseract" | "rapidocr" | "ocrmac";
 
 /**
  * PDF backends available
  */
-export type PdfBackend =
-  | "pypdfium2"
-  | "dlparse_v1"
-  | "dlparse_v2"
-  | "dlparse_v4";
+export type PdfBackend = "pypdfium2" | "dlparse_v1" | "dlparse_v2" | "dlparse_v4";
 
 /**
  * Table extraction modes
@@ -181,11 +166,7 @@ export type TaskStatus = "pending" | "started" | "success" | "failure";
 /**
  * Conversion status
  */
-export type ConversionStatus =
-  | "success"
-  | "partial_success"
-  | "skipped"
-  | "failure";
+export type ConversionStatus = "success" | "partial_success" | "skipped" | "failure";
 
 /**
  * HTTP source for URL-based conversion
@@ -207,16 +188,16 @@ export interface FileSource {
 
 /**
  * S3 source for files stored in S3 buckets
+ * Fields match the OpenAPI specification
  */
 export interface S3Source {
   kind: "s3";
+  endpoint: string;
+  verify_ssl?: boolean;
+  access_key: string;
+  secret_key: string;
   bucket: string;
-  key: string;
-  region?: string;
-  access_key_id?: string;
-  secret_access_key?: string;
-  session_token?: string;
-  endpoint_url?: string;
+  key_prefix?: string;
 }
 
 /**
@@ -345,13 +326,12 @@ export interface ZipTarget {
 
 export interface S3Target {
   kind: "s3";
+  endpoint: string;
+  verify_ssl?: boolean;
+  access_key: string;
+  secret_key: string;
   bucket: string;
-  key: string;
-  region?: string;
-  access_key_id?: string;
-  secret_access_key?: string;
-  session_token?: string;
-  endpoint_url?: string;
+  key_prefix?: string;
 }
 
 export interface PutTarget {
@@ -371,16 +351,21 @@ export interface ConvertDocumentsRequest {
 }
 
 /**
- * Document content in different formats
+ * Document export response (matches OpenAPI ExportDocumentResponse)
  */
-export interface DocumentContent {
-  filename?: string;
-  md_content?: string;
-  json_content?: DoclingDocument;
-  html_content?: string;
-  text_content?: string;
-  doctags_content?: string;
+export interface ExportDocumentResponse {
+  filename: string; // Required in OpenAPI
+  md_content?: string | null;
+  json_content?: DoclingDocument | null;
+  html_content?: string | null;
+  text_content?: string | null;
+  doctags_content?: string | null;
+}
 
+/**
+ * @deprecated Use ExportDocumentResponse instead
+ */
+export interface DocumentContent extends ExportDocumentResponse {
   content?: string | object | undefined;
 }
 
@@ -401,10 +386,10 @@ export interface ProcessingError {
 }
 
 /**
- * Single document conversion response
+ * Single document conversion response (matches OpenAPI ConvertDocumentResponse)
  */
 export interface ConvertDocumentResponse {
-  document: DocumentContent;
+  document: ExportDocumentResponse;
   status: ConversionStatus;
   processing_time: number;
   timings?: ProcessingTimings;
@@ -413,10 +398,13 @@ export interface ConvertDocumentResponse {
 
 /**
  * Response for PUT target conversions (presigned URL uploads)
+ * Matches OpenAPI PresignedUrlConvertDocumentResponse
  */
 export interface PresignedUrlConvertDocumentResponse {
-  status: ConversionStatus;
   processing_time: number;
+  num_converted: number;
+  num_succeeded: number;
+  num_failed: number;
 }
 
 /**
@@ -488,16 +476,88 @@ export interface ApiClientConfig {
 }
 
 /**
- * Conversion result with additional metadata
+ * Standard conversion success result with document content
  */
-export interface ConversionResult {
-  success: boolean;
-  data?:
-    | ConvertDocumentResponse
-    | PresignedUrlConvertDocumentResponse
-    | undefined;
-  error?: ProcessingError | undefined;
-  taskId?: string | undefined;
+export interface DocumentConversionSuccess {
+  success: true;
+  data: ConvertDocumentResponse;
+  taskId?: string;
+}
+
+/**
+ * Target conversion success result (S3, PUT, etc.) - no document content returned
+ */
+export interface TargetConversionSuccess {
+  success: true;
+  data: PresignedUrlConvertDocumentResponse;
+  taskId?: string;
+}
+
+/**
+ * Failed conversion result with error
+ */
+export interface ConversionFailure {
+  success: false;
+  error: ProcessingError;
+  taskId?: string;
+}
+
+/**
+ * Standard conversion result for most operations (convert, extractText, etc.)
+ * TypeScript will know that result.data.document exists when success=true
+ */
+export type ConversionResult = DocumentConversionSuccess | ConversionFailure;
+
+/**
+ * Target conversion result for operations with custom targets (S3, PUT, etc.)
+ * TypeScript will know the appropriate response type based on the operation
+ */
+export type TargetConversionResult = TargetConversionSuccess | ConversionFailure;
+
+/**
+ * Union of all possible conversion results (for internal API methods)
+ */
+export type AnyConversionResult = ConversionResult | TargetConversionResult;
+
+/**
+ * Type guard to check if standard conversion result is successful
+ * When true, TypeScript knows result.data.document exists
+ */
+export function isConversionSuccess(result: ConversionResult): result is DocumentConversionSuccess {
+  return result.success;
+}
+
+/**
+ * Type guard to check if target conversion result is successful
+ * When true, TypeScript knows result.data has PresignedUrlConvertDocumentResponse structure
+ */
+export function isTargetConversionSuccess(result: TargetConversionResult): result is TargetConversionSuccess {
+  return result.success;
+}
+
+/**
+ * Type guard to check if any conversion result is a failure
+ */
+export function isConversionFailure(result: AnyConversionResult): result is ConversionFailure {
+  return !result.success;
+}
+
+/**
+ * Type guard to check if response data has document content
+ */
+export function hasDocumentContent(
+  data: ConvertDocumentResponse | PresignedUrlConvertDocumentResponse
+): data is ConvertDocumentResponse {
+  return 'document' in data;
+}
+
+/**
+ * Type guard to check if response data is presigned URL response
+ */
+export function isPresignedUrlResponse(
+  data: ConvertDocumentResponse | PresignedUrlConvertDocumentResponse
+): data is PresignedUrlConvertDocumentResponse {
+  return !('document' in data);
 }
 
 /**
@@ -524,10 +584,7 @@ export interface AsyncConversionTask {
   meta?: TaskMeta | undefined;
 
   on(event: "progress", listener: (status: TaskStatusResponse) => void): this;
-  on(
-    event: "complete",
-    listener: (result: ConvertDocumentResponse) => void
-  ): this;
+  on(event: "complete", listener: (result: ConvertDocumentResponse) => void): this;
   on(event: "error", listener: (error: ProcessingError) => void): this;
 
   poll(): Promise<TaskStatusResponse>;

@@ -36,9 +36,7 @@ export function failure<E>(error: E): Failure<E> {
 /**
  * Wrap an async function that might throw into a Result
  */
-export async function tryAsync<T, E = Error>(
-  fn: () => Promise<T>
-): Promise<Result<T, E>> {
+export async function tryAsync<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>> {
   try {
     const data = await fn();
     return success(data);

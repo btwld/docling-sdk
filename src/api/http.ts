@@ -103,16 +103,10 @@ export class HttpClient {
       return this.combineWithHeadersArray(baseHeaders, additionalHeaders);
     }
 
-    return this.combineWithHeadersRecord(
-      baseHeaders,
-      additionalHeaders as Record<string, string>
-    );
+    return this.combineWithHeadersRecord(baseHeaders, additionalHeaders as Record<string, string>);
   }
 
-  private combineWithHeadersObject(
-    baseHeaders: Record<string, string>,
-    headers: Headers
-  ): Headers {
+  private combineWithHeadersObject(baseHeaders: Record<string, string>, headers: Headers): Headers {
     const combined = new Headers(baseHeaders);
     headers.forEach((value, key) => combined.set(key, value));
     return combined;
@@ -248,8 +242,7 @@ export class HttpClient {
    * Calculate retry delay with exponential backoff
    */
   private calculateRetryDelay(attempt: number): number {
-    const delay =
-      this.retryConfig.baseDelay * this.retryConfig.backoffFactor ** attempt;
+    const delay = this.retryConfig.baseDelay * this.retryConfig.backoffFactor ** attempt;
     return Math.min(delay, this.retryConfig.maxDelay);
   }
 
@@ -275,10 +268,7 @@ export class HttpClient {
     requestFn: () => Promise<HttpResponse<T>>,
     context: string
   ): Promise<HttpResponse<T>> {
-    const attempts = Array.from(
-      { length: this.retryConfig.maxAttempts },
-      (_, i) => i
-    );
+    const attempts = Array.from({ length: this.retryConfig.maxAttempts }, (_, i) => i);
 
     for (const attempt of attempts) {
       try {
@@ -303,10 +293,7 @@ export class HttpClient {
   /**
    * Make HTTP request with retry logic
    */
-  async request<T>(
-    endpoint: string,
-    options: HttpRequestOptions = {}
-  ): Promise<HttpResponse<T>> {
+  async request<T>(endpoint: string, options: HttpRequestOptions = {}): Promise<HttpResponse<T>> {
     const url = `${this.config.baseUrl}${endpoint}`;
     const context = `${options.method || "GET"} ${endpoint}`;
 
@@ -314,9 +301,7 @@ export class HttpClient {
       const { accept: acceptHeader, ...rest } = options;
       const requestOptions: RequestInit = {
         method: rest.method || "GET",
-        headers: rest.headers
-          ? this.buildHeaders(rest.headers)
-          : this.buildHeaders(),
+        headers: rest.headers ? this.buildHeaders(rest.headers) : this.buildHeaders(),
         signal: this.createAbortSignal(rest.timeout || this.config.timeout),
         ...rest,
       };
@@ -337,13 +322,8 @@ export class HttpClient {
       }
 
       try {
-        if (
-          this.shouldUseFetchTransport() ||
-          requestOptions.body instanceof FormData
-        ) {
-          const fetchHeadersObj = this.headersToRecord(
-            requestOptions.headers as HeadersInit
-          );
+        if (this.shouldUseFetchTransport() || requestOptions.body instanceof FormData) {
+          const fetchHeadersObj = this.headersToRecord(requestOptions.headers as HeadersInit);
           if (options.accept) {
             fetchHeadersObj.Accept = this.getAcceptFromOption(options.accept);
           }
@@ -363,19 +343,15 @@ export class HttpClient {
               errBody = undefined;
             }
             const message =
-              this.extractErrorMessage(errBody) ||
-              res.statusText ||
-              `HTTP ${res.status}`;
+              this.extractErrorMessage(errBody) || res.statusText || `HTTP ${res.status}`;
             throw new DoclingNetworkError(message, res.status, errBody);
           }
 
           const data = options.accept
             ? await this.parseFetchByAccept<T>(res, options.accept)
-            : (res.headers.get("content-type") || "").includes(
-                "application/json"
-              )
-            ? ((await res.json()) as T)
-            : ((await res.text()) as unknown as T);
+            : (res.headers.get("content-type") || "").includes("application/json")
+              ? ((await res.json()) as T)
+              : ((await res.text()) as unknown as T);
 
           return {
             data: data as T,
@@ -392,9 +368,7 @@ export class HttpClient {
         );
 
         if (response.status >= 400) {
-          const errorData = await this.parseErrorResponseFromBuffer(
-            response.data as Buffer
-          );
+          const errorData = await this.parseErrorResponseFromBuffer(response.data as Buffer);
           const message =
             this.extractErrorMessage(errorData) ||
             errorData.message ||
@@ -402,10 +376,7 @@ export class HttpClient {
           throw new DoclingNetworkError(message, response.status, errorData);
         }
 
-        const data = await this.parseBufferByAccept<T>(
-          response.data as Buffer,
-          options.accept
-        );
+        const data = await this.parseBufferByAccept<T>(response.data as Buffer, options.accept);
 
         return {
           data,
@@ -415,10 +386,7 @@ export class HttpClient {
         };
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          throw new DoclingTimeoutError(
-            options.timeout || this.config.timeout,
-            context
-          );
+          throw new DoclingTimeoutError(options.timeout || this.config.timeout, context);
         }
         throw error;
       }
@@ -523,8 +491,8 @@ export class HttpClient {
       ? body instanceof FormData
         ? body
         : this.isNativeBodyType(body)
-        ? (body as BodyInit)
-        : JSON.stringify(body)
+          ? (body as BodyInit)
+          : JSON.stringify(body)
       : null;
 
     return this.requestJson<T>(endpoint, {
@@ -544,8 +512,8 @@ export class HttpClient {
       ? body instanceof FormData
         ? body
         : this.isNativeBodyType(body)
-        ? (body as BodyInit)
-        : JSON.stringify(body)
+          ? (body as BodyInit)
+          : JSON.stringify(body)
       : null;
 
     return this.requestJson<T>(endpoint, {
@@ -698,10 +666,7 @@ export class HttpClient {
               onProgress({
                 uploadedBytes,
                 totalBytes,
-                percentage:
-                  totalBytes > 0
-                    ? Math.round((uploadedBytes / totalBytes) * 100)
-                    : 0,
+                percentage: totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0,
                 currentFile: filename,
                 stage: "uploading",
               });
@@ -711,10 +676,7 @@ export class HttpClient {
           reader.releaseLock();
         }
 
-        const totalLength = chunks.reduce(
-          (sum, chunk) => sum + chunk.length,
-          0
-        );
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
         const combined = new Uint8Array(totalLength);
         let offset = 0;
         for (const chunk of chunks) {
@@ -940,14 +902,10 @@ export class HttpClient {
         for (const [key, value] of Object.entries(fields)) {
           if (Array.isArray(value)) {
             for (const item of value) {
-              formDataParts.push(
-                this.createFormDataPart(boundary, key, String(item))
-              );
+              formDataParts.push(this.createFormDataPart(boundary, key, String(item)));
             }
           } else if (value !== undefined && value !== null) {
-            formDataParts.push(
-              this.createFormDataPart(boundary, key, String(value))
-            );
+            formDataParts.push(this.createFormDataPart(boundary, key, String(value)));
           }
         }
 
@@ -965,8 +923,7 @@ export class HttpClient {
         const suffixLength = Buffer.byteLength(formDataSuffix, "utf8");
         const contentLength = prefixLength + totalBytes + suffixLength;
 
-        const requestFn =
-          url.protocol === "https:" ? httpsRequest : httpRequest;
+        const requestFn = url.protocol === "https:" ? httpsRequest : httpRequest;
 
         const req = requestFn(
           {
@@ -1010,8 +967,7 @@ export class HttpClient {
                     totalBytes,
                     percentage: 100,
                     bytesPerSecond: Math.round(
-                      (progressState.uploadedBytes / (Date.now() - startTime)) *
-                        1000
+                      (progressState.uploadedBytes / (Date.now() - startTime)) * 1000
                     ),
                     stage: "completed",
                   });
@@ -1036,12 +992,7 @@ export class HttpClient {
 
         req.on("timeout", () => {
           req.destroy();
-          reject(
-            new DoclingTimeoutError(
-              options.timeout || this.config.timeout,
-              context
-            )
-          );
+          reject(new DoclingTimeoutError(options.timeout || this.config.timeout, context));
         });
 
         req.write(formDataPrefix);
@@ -1050,19 +1001,14 @@ export class HttpClient {
           transform(chunk: Buffer, _encoding, callback) {
             progressState.uploadedBytes += chunk.length;
             const elapsed = Date.now() - startTime;
-            const bytesPerSecond =
-              elapsed > 0 ? (progressState.uploadedBytes / elapsed) * 1000 : 0;
+            const bytesPerSecond = elapsed > 0 ? (progressState.uploadedBytes / elapsed) * 1000 : 0;
 
             if (onProgress) {
               onProgress({
                 uploadedBytes: progressState.uploadedBytes,
                 totalBytes,
                 percentage:
-                  totalBytes > 0
-                    ? Math.round(
-                        (progressState.uploadedBytes / totalBytes) * 100
-                      )
-                    : 0,
+                  totalBytes > 0 ? Math.round((progressState.uploadedBytes / totalBytes) * 100) : 0,
                 bytesPerSecond: Math.round(bytesPerSecond),
                 stage: "uploading",
               });
@@ -1175,29 +1121,19 @@ export class HttpClient {
         for (const [key, value] of Object.entries(fields)) {
           if (Array.isArray(value)) {
             for (const item of value) {
-              formDataParts.push(
-                this.createFormDataPart(boundary, key, String(item))
-              );
+              formDataParts.push(this.createFormDataPart(boundary, key, String(item)));
             }
           } else if (value !== undefined && value !== null) {
-            formDataParts.push(
-              this.createFormDataPart(boundary, key, String(value))
-            );
+            formDataParts.push(this.createFormDataPart(boundary, key, String(value)));
           }
         }
 
-        const filePartHeader = this.createFilePartHeader(
-          boundary,
-          "files",
-          filename,
-          contentType
-        );
+        const filePartHeader = this.createFilePartHeader(boundary, "files", filename, contentType);
 
         const formDataPrefix = formDataParts.join("") + filePartHeader;
         const formDataSuffix = `\r\n--${boundary}--\r\n`;
 
-        const requestFn =
-          url.protocol === "https:" ? httpsRequest : httpRequest;
+        const requestFn = url.protocol === "https:" ? httpsRequest : httpRequest;
 
         const req = requestFn(
           {
@@ -1223,8 +1159,7 @@ export class HttpClient {
             res.on("end", () => {
               try {
                 const headers = this.parseNodeHeaders(res.headers);
-                const contentType =
-                  (res.headers["content-type"] as string) || "";
+                const contentType = (res.headers["content-type"] as string) || "";
                 const buffer = Buffer.concat(chunks);
 
                 if (!res.statusCode || res.statusCode >= 400) {
@@ -1251,8 +1186,7 @@ export class HttpClient {
                     totalBytes: progressState.uploadedBytes,
                     percentage: 100,
                     bytesPerSecond: Math.round(
-                      (progressState.uploadedBytes / (Date.now() - startTime)) *
-                        1000
+                      (progressState.uploadedBytes / (Date.now() - startTime)) * 1000
                     ),
                     stage: "completed",
                   });
@@ -1277,12 +1211,7 @@ export class HttpClient {
 
         req.on("timeout", () => {
           req.destroy();
-          reject(
-            new DoclingTimeoutError(
-              options.timeout || this.config.timeout,
-              context
-            )
-          );
+          reject(new DoclingTimeoutError(options.timeout || this.config.timeout, context));
         });
 
         req.write(formDataPrefix);
@@ -1291,14 +1220,11 @@ export class HttpClient {
           transform(chunk: Buffer, _encoding, callback) {
             progressState.uploadedBytes += chunk.length;
             const elapsed = Date.now() - startTime;
-            const bytesPerSecond =
-              elapsed > 0 ? (progressState.uploadedBytes / elapsed) * 1000 : 0;
+            const bytesPerSecond = elapsed > 0 ? (progressState.uploadedBytes / elapsed) * 1000 : 0;
 
             if (onProgress) {
               const percentage =
-                totalBytes > 0
-                  ? Math.round((progressState.uploadedBytes / totalBytes) * 100)
-                  : 0;
+                totalBytes > 0 ? Math.round((progressState.uploadedBytes / totalBytes) * 100) : 0;
 
               onProgress({
                 uploadedBytes: progressState.uploadedBytes,
@@ -1399,11 +1325,7 @@ export class HttpClient {
   /**
    * Create a form data part for multipart streaming
    */
-  private createFormDataPart(
-    boundary: string,
-    name: string,
-    value: string
-  ): string {
+  private createFormDataPart(boundary: string, name: string, value: string): string {
     return `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
   }
 
@@ -1431,9 +1353,7 @@ export class HttpClient {
   /**
    * Parse headers from Node.js HTTP response
    */
-  private parseNodeHeaders(
-    headers: NodeJS.Dict<string | string[]>
-  ): Record<string, string> {
+  private parseNodeHeaders(headers: NodeJS.Dict<string | string[]>): Record<string, string> {
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(headers)) {
       if (value) {
@@ -1459,8 +1379,7 @@ export class HttpClient {
    * Decide whether to use fetch transport (unit tests) or pooled Node HTTP (default)
    */
   private shouldUseFetchTransport(): boolean {
-    const isTest =
-      process.env.VITEST_WORKER_ID || process.env.NODE_ENV === "test";
+    const isTest = process.env.VITEST_WORKER_ID || process.env.NODE_ENV === "test";
     return typeof fetch === "function" && !!isTest;
   }
 
@@ -1488,10 +1407,7 @@ export class HttpClient {
 
     return new Promise((resolve, reject) => {
       const requestFn = url.protocol === "https:" ? httpsRequest : httpRequest;
-      const headers = this.buildHeaders(options.headers) as Record<
-        string,
-        string
-      >;
+      const headers = this.buildHeaders(options.headers) as Record<string, string>;
 
       const requestOptions = {
         hostname: url.hostname,
@@ -1506,9 +1422,7 @@ export class HttpClient {
         const contentType = res.headers["content-type"] || "";
         const contentDisposition = res.headers["content-disposition"] || "";
 
-        const filenameMatch = contentDisposition.match(
-          /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
-        );
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
         const filename = filenameMatch?.[1]
           ? filenameMatch[1].replace(/['"]/g, "")
           : "download.zip";
@@ -1575,12 +1489,7 @@ export class HttpClient {
 
       req.on("timeout", () => {
         req.destroy();
-        reject(
-          new DoclingTimeoutError(
-            options.timeout || this.config.timeout,
-            context
-          )
-        );
+        reject(new DoclingTimeoutError(options.timeout || this.config.timeout, context));
       });
 
       if (options.body) {
@@ -1613,9 +1522,7 @@ export class HttpClient {
   /**
    * Convert HeadersInit to OutgoingHttpHeaders
    */
-  private convertHeaders(
-    headers?: HeadersInit
-  ): Record<string, string | string[]> | undefined {
+  private convertHeaders(headers?: HeadersInit): Record<string, string | string[]> | undefined {
     if (!headers) return undefined;
 
     if (Array.isArray(headers)) {
@@ -1699,9 +1606,7 @@ export class HttpClient {
 
       req.on("timeout", () => {
         req.destroy();
-        reject(
-          new DoclingTimeoutError(this.config.timeout, `Request to ${url}`)
-        );
+        reject(new DoclingTimeoutError(this.config.timeout, `Request to ${url}`));
       });
 
       if (options.body) {
@@ -1721,9 +1626,7 @@ export class HttpClient {
   /**
    * Parse error response from buffer
    */
-  private async parseErrorResponseFromBuffer(
-    buffer: Buffer
-  ): Promise<ProcessingError> {
+  private async parseErrorResponseFromBuffer(buffer: Buffer): Promise<ProcessingError> {
     const text = buffer.toString("utf8");
 
     try {

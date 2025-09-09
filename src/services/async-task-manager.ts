@@ -1,10 +1,10 @@
-import { EventEmitter } from 'node:events';
-import type { HttpClient } from '../api/http';
+import { EventEmitter } from "node:events";
+import type { HttpClient } from "../api/http";
 
 /**
  * Task status from the API
  */
-export type TaskStatus = 'pending' | 'started' | 'success' | 'failure' | 'revoked';
+export type TaskStatus = "pending" | "started" | "success" | "failure" | "revoked";
 
 /**
  * Task events that can be emitted
@@ -97,12 +97,12 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
       this.setTaskTimeout(taskId);
 
-      this.emit('status', 'pending', taskId);
+      this.emit("status", "pending", taskId);
 
       return taskId;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error));
-      this.emit('error', errorObj, 'unknown');
+      this.emit("error", errorObj, "unknown");
       throw errorObj;
     }
   }
@@ -120,9 +120,9 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
         if (!task) {
           resolve({
             success: false,
-            error: { message: 'Task not found' },
+            error: { message: "Task not found" },
             taskId,
-            finalStatus: 'failure',
+            finalStatus: "failure",
             duration: 0,
           });
           return;
@@ -134,7 +134,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
         resolve({
           success: true,
           taskId,
-          finalStatus: 'success',
+          finalStatus: "success",
           duration,
         });
       };
@@ -150,7 +150,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
           success: false,
           error: { message: error },
           taskId,
-          finalStatus: 'failure',
+          finalStatus: "failure",
           duration,
         });
       };
@@ -164,9 +164,9 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
         resolve({
           success: false,
-          error: { message: 'Task timeout' },
+          error: { message: "Task timeout" },
           taskId,
-          finalStatus: 'failure',
+          finalStatus: "failure",
           duration,
         });
       };
@@ -182,15 +182,15 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
           success: false,
           error: { message: error.message, details: error },
           taskId,
-          finalStatus: 'failure',
+          finalStatus: "failure",
           duration,
         });
       };
 
-      this.once('success', handleCompletion);
-      this.once('failure', handleFailure);
-      this.once('timeout', handleTimeout);
-      this.once('error', handleError);
+      this.once("success", handleCompletion);
+      this.once("failure", handleFailure);
+      this.once("timeout", handleTimeout);
+      this.once("error", handleError);
     });
   }
 
@@ -207,7 +207,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
    */
   async cancelTask(taskId: string): Promise<void> {
     this.cleanup(taskId);
-    this.emit('failure', 'Task cancelled', taskId);
+    this.emit("failure", "Task cancelled", taskId);
   }
 
   /**
@@ -246,7 +246,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
         const maxPolls = task.options.maxPolls ?? 60;
         if (pollCount > maxPolls) {
-          this.emit('timeout', taskId);
+          this.emit("timeout", taskId);
           return;
         }
 
@@ -255,22 +255,22 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
         );
 
         const status = response.data.task_status;
-        this.emit('status', status, taskId);
+        this.emit("status", status, taskId);
 
-        if (status === 'success') {
-          this.emit('success', taskId);
+        if (status === "success") {
+          this.emit("success", taskId);
           return;
         }
 
-        if (status === 'failure' || status === 'revoked') {
-          this.emit('failure', `Task ${status}`, taskId);
+        if (status === "failure" || status === "revoked") {
+          this.emit("failure", `Task ${status}`, taskId);
           return;
         }
 
         task.pollTimer = setTimeout(poll, task.options.pollInterval);
       } catch (error) {
         const errorObj = error instanceof Error ? error : new Error(String(error));
-        this.emit('error', errorObj, taskId);
+        this.emit("error", errorObj, taskId);
       }
     };
 
@@ -285,7 +285,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
     if (!task) return;
 
     task.timeoutTimer = setTimeout(() => {
-      this.emit('timeout', taskId);
+      this.emit("timeout", taskId);
     }, task.options.timeout);
   }
 

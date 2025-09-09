@@ -228,30 +228,24 @@ export class CliNotFoundError extends Error {
  */
 export const CliValidation = {
   isValidInputFormat: (format: string): format is InputFormat =>
-    ["docx", "pptx", "html", "image", "pdf", "asciidoc", "md", "xlsx"].includes(
-      format
-    ),
+    ["docx", "pptx", "html", "image", "pdf", "asciidoc", "md", "xlsx"].includes(format),
 
   isValidOutputFormat: (format: string): format is OutputFormat =>
     ["md", "json", "html", "text", "doctags"].includes(format),
 
   isValidOcrEngine: (engine: string): engine is OcrEngine =>
-    ["easyocr", "tesserocr", "tesseract", "rapidocr", "ocrmac"].includes(
-      engine
-    ),
+    ["easyocr", "tesserocr", "tesseract", "rapidocr", "ocrmac"].includes(engine),
 
   isValidPdfBackend: (backend: string): backend is PdfBackend =>
     ["pypdfium2", "dlparse_v1", "dlparse_v2", "dlparse_v4"].includes(backend),
 
-  isValidTableMode: (mode: string): mode is TableMode =>
-    ["fast", "accurate"].includes(mode),
+  isValidTableMode: (mode: string): mode is TableMode => ["fast", "accurate"].includes(mode),
 
   isValidImageExportMode: (mode: string): mode is ImageExportMode =>
     ["embedded", "placeholder", "referenced"].includes(mode),
 
-  isValidProcessingPipeline: (
-    pipeline: string
-  ): pipeline is ProcessingPipeline => ["standard", "vlm"].includes(pipeline),
+  isValidProcessingPipeline: (pipeline: string): pipeline is ProcessingPipeline =>
+    ["standard", "vlm"].includes(pipeline),
 
   isValidVlmModel: (model: string): model is CliVlmModelType =>
     ["smoldocling", "granite_vision", "smolvlm"].includes(model),

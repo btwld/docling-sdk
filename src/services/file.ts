@@ -1,13 +1,14 @@
-import type { HttpClient } from '../api/http';
+import type { HttpClient } from "../api/http";
 import type {
   ConversionFileResult,
   ConversionOptions,
   ConversionResult,
   ConvertDocumentResponse,
   ProcessingError,
-} from '../types/api';
-import type { NodeReadable } from '../types/streams';
-import { AsyncTaskManager } from './async-task-manager';
+  TaskStatusResponse,
+} from "../types/api";
+import type { NodeReadable } from "../types/streams";
+import { AsyncTaskManager } from "./async-task-manager";
 
 /**
  * File service for handling file operations and conversions
@@ -40,11 +41,11 @@ export class FileService {
   async extractText(
     file: Buffer | string,
     filename: string,
-    options: Omit<ConversionOptions, 'to_formats'> = {}
+    options: Omit<ConversionOptions, "to_formats"> = {}
   ): Promise<ConversionResult> {
     return this.convert(file, filename, {
       ...options,
-      to_formats: ['text'],
+      to_formats: ["text"],
     });
   }
 
@@ -55,11 +56,11 @@ export class FileService {
   async toHtml(
     file: Buffer | string,
     filename: string,
-    options: Omit<ConversionOptions, 'to_formats'> = {}
+    options: Omit<ConversionOptions, "to_formats"> = {}
   ): Promise<ConversionResult> {
     return this.convert(file, filename, {
       ...options,
-      to_formats: ['html'],
+      to_formats: ["html"],
     });
   }
 
@@ -70,11 +71,11 @@ export class FileService {
   async toMarkdown(
     file: Buffer | string,
     filename: string,
-    options: Omit<ConversionOptions, 'to_formats'> = {}
+    options: Omit<ConversionOptions, "to_formats"> = {}
   ): Promise<ConversionResult> {
     return this.convert(file, filename, {
       ...options,
-      to_formats: ['md'],
+      to_formats: ["md"],
     });
   }
 
@@ -100,7 +101,7 @@ export class FileService {
     options: ConversionOptions = {}
   ): Promise<ConversionResult> {
     return this.convert(file, filename, {
-      pipeline: 'vlm',
+      pipeline: "vlm",
       ...options,
     });
   }
@@ -117,51 +118,74 @@ export class FileService {
   ): Promise<ConversionResult> {
     try {
       const fileBuffer = await this.ensureBuffer(file);
-      const base64String = fileBuffer.toString('base64');
 
-      const parameters = {
-        sources: [
+      // Use the file upload async endpoint directly
+      const response = await this.http.streamUpload<TaskStatusResponse>(
+        "/v1/convert/file/async",
+        [
           {
-            kind: 'file',
-            base64_string: base64String,
+            name: "files",
+            data: fileBuffer,
             filename,
+            contentType: this.getContentType(filename),
+            size: fileBuffer.length,
           },
         ],
-        options: {
-          ...options,
-        },
-        target: {
-          kind: 'inbody',
-        },
-      };
+        this.buildFormFields(options, "inbody")
+      );
 
-      const taskId = await this.taskManager.submitTask('/v1/convert/source/async', parameters, {
-        timeout: 300000,
-        pollInterval: 2000,
-      });
+      const taskData = response.data;
+      const taskId = taskData.task_id;
 
-      const result = await this.taskManager.waitForCompletion(taskId);
+      // Poll for task completion
+      let attempts = 0;
+      const maxAttempts = 150; // 150 * 2s = 5 minutes max
 
-      if (!result.success) {
-        return {
-          success: false,
-          error: {
-            message: result.error?.message || 'Async task failed',
-            details: result.error?.details,
-          },
-        };
+      while (attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
+        attempts++;
+
+        const statusResponse = await this.http.getJson<TaskStatusResponse>(
+          `/v1/status/poll/${taskId}`
+        );
+
+        const status = statusResponse.data.task_status;
+
+        if (status === "success") {
+          // Task completed, get the result
+          const resultResponse = await this.http.getJson<ConvertDocumentResponse>(
+            `/v1/result/${taskId}`
+          );
+
+          return {
+            success: true,
+            data: resultResponse.data,
+          };
+        }
+        if (status === "failure") {
+          return {
+            success: false,
+            error: {
+              message: `Async task failed with status: ${status}`,
+              details: { task_id: taskId, status: status },
+            },
+          };
+        }
+
+        // Continue polling for pending/running tasks
       }
 
-      const data = await this.taskManager.getTaskResult<ConvertDocumentResponse>(taskId);
-
       return {
-        success: true,
-        data,
+        success: false,
+        error: {
+          message: `Async task timed out after ${maxAttempts * 2} seconds`,
+          details: { task_id: taskId, attempts },
+        },
       };
     } catch (error) {
       return {
         success: false,
-        error: this.createError(error, 'Async conversion failed'),
+        error: this.createError(error, "Async conversion failed"),
       };
     }
   }
@@ -172,10 +196,10 @@ export class FileService {
   private isReadableStream(value: unknown): value is NodeReadable {
     return (
       value !== null &&
-      typeof value === 'object' &&
-      'pipe' in value &&
-      'read' in value &&
-      'readable' in value
+      typeof value === "object" &&
+      "pipe" in value &&
+      "read" in value &&
+      "readable" in value
     );
   }
 
@@ -206,17 +230,17 @@ export class FileService {
       const fileBuffer = await this.ensureBuffer(file);
 
       const response = await this.http.streamUpload<ConvertDocumentResponse>(
-        '/v1/convert/file',
+        "/v1/convert/file",
         [
           {
-            name: 'files',
+            name: "files",
             data: fileBuffer,
             filename,
             contentType: this.getContentType(filename),
             size: fileBuffer.length,
           },
         ],
-        this.buildFormFields(options, 'inbody')
+        this.buildFormFields(options, "inbody")
       );
 
       return {
@@ -226,7 +250,7 @@ export class FileService {
     } catch (error) {
       return {
         success: false,
-        error: this.createError(error, 'Sync conversion failed'),
+        error: this.createError(error, "Sync conversion failed"),
       };
     }
   }
@@ -245,17 +269,17 @@ export class FileService {
       const fileBuffer = await this.ensureBuffer(file);
 
       const upload = await this.http.streamUpload<ConvertDocumentResponse>(
-        '/v1/convert/file/async',
+        "/v1/convert/file/async",
         [
           {
-            name: 'files',
+            name: "files",
             data: fileBuffer,
             filename,
             contentType: this.getContentType(filename),
             size: fileBuffer.length,
           },
         ],
-        this.buildFormFields(options, 'zip')
+        this.buildFormFields(options, "zip")
       );
 
       const taskId = (upload.data as unknown as { task_id?: string }).task_id;
@@ -263,7 +287,7 @@ export class FileService {
         return {
           success: false,
           error: {
-            message: 'Async upload did not return task_id',
+            message: "Async upload did not return task_id",
           },
         };
       }
@@ -274,20 +298,20 @@ export class FileService {
         return {
           success: false,
           error: {
-            message: result.error?.message || 'ZIP task failed',
+            message: result.error?.message || "ZIP task failed",
             details: result.error?.details,
           },
         };
       }
 
       const resultResponse = await this.http.requestFileStream(`/v1/result/${taskId}`, {
-        headers: { Accept: 'application/zip' },
+        headers: { Accept: "application/zip" },
       });
 
-      const contentType = resultResponse.headers['content-type'] || '';
+      const contentType = resultResponse.headers["content-type"] || "";
 
-      if (contentType.includes('application/zip')) {
-        const contentDisposition = resultResponse.headers['content-disposition'] || '';
+      if (contentType.includes("application/zip")) {
+        const contentDisposition = resultResponse.headers["content-disposition"] || "";
         const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
         const zipFilename = filenameMatch ? filenameMatch[1] : `converted_${filename}.zip`;
 
@@ -297,9 +321,9 @@ export class FileService {
           success: true,
           fileMetadata: {
             contentType,
-            filename: zipFilename || 'converted.zip',
-            ...(resultResponse.headers['content-length'] && {
-              size: Number.parseInt(resultResponse.headers['content-length']),
+            filename: zipFilename || "converted.zip",
+            ...(resultResponse.headers["content-length"] && {
+              size: Number.parseInt(resultResponse.headers["content-length"]),
             }),
           },
         };
@@ -313,14 +337,14 @@ export class FileService {
       return {
         success: false,
         error: {
-          message: 'Expected ZIP file but received different content type',
+          message: "Expected ZIP file but received different content type",
           details: { contentType, taskId },
         },
       };
     } catch (error) {
       return {
         success: false,
-        error: this.createError(error, 'Async ZIP conversion failed'),
+        error: this.createError(error, "Async ZIP conversion failed"),
       };
     }
   }
@@ -336,15 +360,15 @@ export class FileService {
   ): Promise<ConversionResult> {
     try {
       const response = await this.http.streamPassthrough(
-        '/v1/convert/file',
+        "/v1/convert/file",
         inputStream,
         filename,
         this.getContentType(filename),
-        this.buildFormFields(options, 'inbody'),
-        { accept: 'json' }
+        this.buildFormFields(options, "inbody"),
+        { accept: "json" }
       );
 
-      if (response.data && typeof response.data === 'object' && 'document' in response.data) {
+      if (response.data && typeof response.data === "object" && "document" in response.data) {
         return {
           success: true,
           data: response.data as ConvertDocumentResponse,
@@ -354,14 +378,14 @@ export class FileService {
       return {
         success: false,
         error: {
-          message: 'No data received from stream conversion',
+          message: "No data received from stream conversion",
           details: response,
         },
       };
     } catch (error) {
       return {
         success: false,
-        error: this.createError(error, 'Stream to JSON conversion failed'),
+        error: this.createError(error, "Stream to JSON conversion failed"),
       };
     }
   }
@@ -377,18 +401,18 @@ export class FileService {
   ): Promise<ConversionFileResult> {
     try {
       const upload = await this.http.streamPassthrough<ConvertDocumentResponse>(
-        '/v1/convert/file/async',
+        "/v1/convert/file/async",
         _inputStream,
         filename,
         this.getContentType(filename),
-        this.buildFormFields(options, 'zip'),
-        { accept: 'json' }
+        this.buildFormFields(options, "zip"),
+        { accept: "json" }
       );
 
-      if (!upload.data || typeof upload.data !== 'object') {
+      if (!upload.data || typeof upload.data !== "object") {
         return {
           success: false,
-          error: { message: 'Async upload failed', details: upload },
+          error: { message: "Async upload failed", details: upload },
         };
       }
 
@@ -396,7 +420,7 @@ export class FileService {
       if (!taskId) {
         return {
           success: false,
-          error: { message: 'Missing task_id from async upload response' },
+          error: { message: "Missing task_id from async upload response" },
         };
       }
 
@@ -411,7 +435,7 @@ export class FileService {
           `/v1/status/poll/${taskId}`
         );
 
-        if (status.data.task_status === 'success' || status.data.task_status === 'failure') {
+        if (status.data.task_status === "success" || status.data.task_status === "failure") {
           finalStatus = status.data.task_status;
           break;
         }
@@ -421,11 +445,11 @@ export class FileService {
       if (!finalStatus) {
         return {
           success: false,
-          error: { message: 'Task polling timeout' },
+          error: { message: "Task polling timeout" },
         };
       }
 
-      if (finalStatus !== 'success') {
+      if (finalStatus !== "success") {
         return {
           success: false,
           error: { message: `Task failed with status: ${finalStatus}` },
@@ -434,7 +458,7 @@ export class FileService {
 
       const fileRes = await this.http.requestFileStream<ConvertDocumentResponse>(
         `/v1/result/${taskId}`,
-        { method: 'GET', headers: { Accept: 'application/zip' } }
+        { method: "GET", headers: { Accept: "application/zip" } }
       );
 
       if (fileRes.fileStream && fileRes.fileMetadata) {
@@ -448,14 +472,14 @@ export class FileService {
       return {
         success: false,
         error: {
-          message: 'Expected ZIP stream but did not receive a file stream',
+          message: "Expected ZIP stream but did not receive a file stream",
           details: { headers: fileRes.headers, status: fileRes.status },
         },
       };
     } catch (error) {
       return {
         success: false,
-        error: this.createError(error, 'Stream to ZIP conversion failed'),
+        error: this.createError(error, "Stream to ZIP conversion failed"),
       };
     }
   }
@@ -464,29 +488,29 @@ export class FileService {
    * Get content type from filename
    */
   private static readonly EXT_CT_MAP: ReadonlyMap<string, string> = new Map([
-    ['pdf', 'application/pdf'],
-    ['doc', 'application/msword'],
-    ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-    ['txt', 'text/plain'],
-    ['md', 'text/markdown'],
-    ['html', 'text/html'],
-    ['jpg', 'image/jpeg'],
-    ['jpeg', 'image/jpeg'],
-    ['png', 'image/png'],
-    ['gif', 'image/gif'],
+    ["pdf", "application/pdf"],
+    ["doc", "application/msword"],
+    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ["txt", "text/plain"],
+    ["md", "text/markdown"],
+    ["html", "text/html"],
+    ["jpg", "image/jpeg"],
+    ["jpeg", "image/jpeg"],
+    ["png", "image/png"],
+    ["gif", "image/gif"],
   ]);
 
   private getContentType(filename: string): string {
-    const ext = filename.toLowerCase().split('.').pop();
-    return (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) || 'application/octet-stream';
+    const ext = filename.toLowerCase().split(".").pop();
+    return (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) || "application/octet-stream";
   }
 
   /**
    * Ensure input is a Buffer
    */
   private async ensureBuffer(file: Buffer | string): Promise<Buffer> {
-    if (typeof file === 'string') {
-      const fs = await import('node:fs/promises');
+    if (typeof file === "string") {
+      const fs = await import("node:fs/promises");
       return fs.readFile(file);
     }
     return file;
@@ -512,7 +536,7 @@ export class FileService {
    */
   private buildFormFields(
     options: ConversionOptions,
-    targetKind?: 'inbody' | 'zip'
+    targetKind?: "inbody" | "zip"
   ): Record<string, unknown> {
     const fields: Record<string, unknown> = {};
 
