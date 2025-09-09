@@ -119,7 +119,6 @@ export class FileService {
     try {
       const fileBuffer = await this.ensureBuffer(file);
 
-      // Use the file upload async endpoint directly
       const response = await this.http.streamUpload<TaskStatusResponse>(
         "/v1/convert/file/async",
         [
@@ -137,7 +136,6 @@ export class FileService {
       const taskData = response.data;
       const taskId = taskData.task_id;
 
-      // Poll for task completion
       let attempts = 0;
       const maxAttempts = 150; // 150 * 2s = 5 minutes max
 
@@ -153,9 +151,10 @@ export class FileService {
 
         if (status === "success") {
           // Task completed, get the result
-          const resultResponse = await this.http.getJson<ConvertDocumentResponse>(
-            `/v1/result/${taskId}`
-          );
+          const resultResponse =
+            await this.http.getJson<ConvertDocumentResponse>(
+              `/v1/result/${taskId}`
+            );
 
           return {
             success: true,
@@ -171,8 +170,6 @@ export class FileService {
             },
           };
         }
-
-        // Continue polling for pending/running tasks
       }
 
       return {
@@ -304,16 +301,22 @@ export class FileService {
         };
       }
 
-      const resultResponse = await this.http.requestFileStream(`/v1/result/${taskId}`, {
-        headers: { Accept: "application/zip" },
-      });
+      const resultResponse = await this.http.requestFileStream(
+        `/v1/result/${taskId}`,
+        {
+          headers: { Accept: "application/zip" },
+        }
+      );
 
       const contentType = resultResponse.headers["content-type"] || "";
 
       if (contentType.includes("application/zip")) {
-        const contentDisposition = resultResponse.headers["content-disposition"] || "";
+        const contentDisposition =
+          resultResponse.headers["content-disposition"] || "";
         const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-        const zipFilename = filenameMatch ? filenameMatch[1] : `converted_${filename}.zip`;
+        const zipFilename = filenameMatch
+          ? filenameMatch[1]
+          : `converted_${filename}.zip`;
 
         const stream = resultResponse.fileStream || resultResponse.data;
 
@@ -368,7 +371,11 @@ export class FileService {
         { accept: "json" }
       );
 
-      if (response.data && typeof response.data === "object" && "document" in response.data) {
+      if (
+        response.data &&
+        typeof response.data === "object" &&
+        "document" in response.data
+      ) {
         return {
           success: true,
           data: response.data as ConvertDocumentResponse,
@@ -435,7 +442,10 @@ export class FileService {
           `/v1/status/poll/${taskId}`
         );
 
-        if (status.data.task_status === "success" || status.data.task_status === "failure") {
+        if (
+          status.data.task_status === "success" ||
+          status.data.task_status === "failure"
+        ) {
           finalStatus = status.data.task_status;
           break;
         }
@@ -456,10 +466,11 @@ export class FileService {
         };
       }
 
-      const fileRes = await this.http.requestFileStream<ConvertDocumentResponse>(
-        `/v1/result/${taskId}`,
-        { method: "GET", headers: { Accept: "application/zip" } }
-      );
+      const fileRes =
+        await this.http.requestFileStream<ConvertDocumentResponse>(
+          `/v1/result/${taskId}`,
+          { method: "GET", headers: { Accept: "application/zip" } }
+        );
 
       if (fileRes.fileStream && fileRes.fileMetadata) {
         return {
@@ -490,7 +501,10 @@ export class FileService {
   private static readonly EXT_CT_MAP: ReadonlyMap<string, string> = new Map([
     ["pdf", "application/pdf"],
     ["doc", "application/msword"],
-    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    [
+      "docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
     ["txt", "text/plain"],
     ["md", "text/markdown"],
     ["html", "text/html"],
@@ -502,7 +516,10 @@ export class FileService {
 
   private getContentType(filename: string): string {
     const ext = filename.toLowerCase().split(".").pop();
-    return (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) || "application/octet-stream";
+    return (
+      (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) ||
+      "application/octet-stream"
+    );
   }
 
   /**
@@ -543,7 +560,8 @@ export class FileService {
     if (options.to_formats) fields.to_formats = options.to_formats;
     if (options.pdf_backend) fields.pdf_backend = options.pdf_backend;
     if (options.do_ocr !== undefined) fields.do_ocr = options.do_ocr.toString();
-    if (options.force_ocr !== undefined) fields.force_ocr = options.force_ocr.toString();
+    if (options.force_ocr !== undefined)
+      fields.force_ocr = options.force_ocr.toString();
     if (options.ocr_engine) fields.ocr_engine = options.ocr_engine;
     if (options.table_mode) fields.table_mode = options.table_mode;
     if (options.pipeline) fields.pipeline = options.pipeline;
@@ -553,7 +571,8 @@ export class FileService {
       fields.do_table_structure = options.do_table_structure.toString();
     if (options.include_images !== undefined)
       fields.include_images = options.include_images.toString();
-    if (options.images_scale !== undefined) fields.images_scale = options.images_scale.toString();
+    if (options.images_scale !== undefined)
+      fields.images_scale = options.images_scale.toString();
 
     if (targetKind) {
       fields.target_type = targetKind;

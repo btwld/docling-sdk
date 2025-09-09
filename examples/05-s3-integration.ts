@@ -3,20 +3,11 @@ import { Docling } from "../src";
 async function s3SourceExample() {
   console.log("☁️ S3 Source Integration Example");
 
-  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-    console.log("⚠️ AWS credentials not found in environment variables");
-    console.log(
-      "   Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to test S3 features"
-    );
-    console.log("   Or configure AWS credentials via AWS CLI or IAM roles");
-    return;
-  }
-
   const client = new Docling({
     api: {
       baseUrl: process.env.DOCLING_URL || "http://localhost:5001",
       apiKey: process.env.DOCLING_API_KEY,
-      timeout: 120000, // Longer timeout for S3 operations
+      timeout: 120000,
     },
   });
 
@@ -39,12 +30,18 @@ async function s3SourceExample() {
         // ConvertDocumentResponse - has document content
         console.log("✅ S3 document conversion successful!");
         console.log(`📊 Document filename: ${result.data.document.filename}`);
-        console.log(`📄 Content available: ${result.data.document.json_content ? 'Yes' : 'No'}`);
+        console.log(
+          `📄 Content available: ${
+            result.data.document.json_content ? "Yes" : "No"
+          }`
+        );
 
         if (result.data.document.md_content) {
           const mdLength = result.data.document.md_content.length;
           console.log(`📝 Markdown content: ${mdLength} characters`);
-          console.log(`📝 Preview: ${result.data.document.md_content.slice(0, 200)}...`);
+          console.log(
+            `📝 Preview: ${result.data.document.md_content.slice(0, 200)}...`
+          );
         }
 
         if (result.data.document.json_content) {
@@ -203,7 +200,8 @@ async function s3BatchProcessing() {
       },
     ];
 
-    const outputBucket = process.env.S3_OUTPUT_BUCKET || "my-docling-output-bucket";
+    const outputBucket =
+      process.env.S3_OUTPUT_BUCKET || "my-docling-output-bucket";
     const outputRegion = process.env.AWS_REGION || "us-east-1";
 
     console.log(`📚 Processing ${s3Sources.length} documents from S3...`);
@@ -338,7 +336,7 @@ async function s3WithProgress() {
       ],
       {
         kind: "s3",
-        bucket: process.env.S3_OUTPUT_BUCKET || "protection-plus-test",
+        bucket: process.env.S3_OUTPUT_BUCKET || "my-docling-output-bucket",
         key: `test-outputs/progress-test/result-${Date.now()}.zip`,
         region: process.env.AWS_REGION || "us-east-1",
       },
@@ -346,8 +344,6 @@ async function s3WithProgress() {
         to_formats: ["md", "json"],
       }
     );
-
-    console.log(); // New line after progress bar
 
     if (result.success) {
       console.log("✅ S3 processing with progress tracking successful!");
