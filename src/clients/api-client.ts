@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import type { Writable } from "node:stream";
-import { setTimeout as delay } from "node:timers/promises";
 import { HttpClient } from "../api/http";
 import type { AsyncTaskManager } from "../services/async-task-manager";
 import { FileService } from "../services/file";
@@ -20,9 +19,11 @@ import type {
   InputFormat,
   PresignedUrlConvertDocumentResponse,
   S3Source,
+  TargetConversionResult,
   TaskStatusResponse,
 } from "../types/api";
-import type { DoclingAPI, DoclingAPIConfig } from "../types/client";
+import { hasDocumentContent } from "../types/api";
+import type { DoclingAPI, DoclingAPIConfig, S3Config } from "../types/client";
 import type {
   ProgressConfig,
   ProgressUpdate,
@@ -31,10 +32,7 @@ import type {
 } from "../types/client";
 import { tryAsync } from "../utils/result";
 import { ValidationUtils } from "../utils/validation";
-import {
-  type ConnectionState,
-  DoclingWebSocketClient,
-} from "./websocket-client";
+import { type ConnectionState, DoclingWebSocketClient } from "./websocket-client";
 
 export class DoclingAPIClient implements DoclingAPI {
   public readonly type = "api" as const;
@@ -44,42 +42,36 @@ export class DoclingAPIClient implements DoclingAPI {
   private progressManager: ProgressTracker | null = null;
   public readonly files: FileService;
 
-  private static readonly EXT_BY_INPUT: ReadonlyMap<InputFormat, string> =
-    new Map<InputFormat, string>([
-      ["pdf", ".pdf"],
-      ["md", ".md"],
-      ["html", ".html"],
-      ["docx", ".docx"],
-      ["pptx", ".pptx"],
-      ["xlsx", ".xlsx"],
-      ["image", ".png"],
-      ["asciidoc", ".adoc"],
-    ]);
+  private static readonly EXT_BY_INPUT: ReadonlyMap<InputFormat, string> = new Map<
+    InputFormat,
+    string
+  >([
+    ["pdf", ".pdf"],
+    ["md", ".md"],
+    ["html", ".html"],
+    ["docx", ".docx"],
+    ["pptx", ".pptx"],
+    ["xlsx", ".xlsx"],
+    ["image", ".png"],
+    ["asciidoc", ".adoc"],
+  ]);
 
-  private static readonly CT_BY_INPUT: ReadonlyMap<InputFormat, string> =
-    new Map<InputFormat, string>([
-      ["pdf", "application/pdf"],
-      ["md", "text/markdown"],
-      ["html", "text/html"],
-      [
-        "docx",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ],
-      [
-        "pptx",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      ],
-      [
-        "xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      ],
-      ["image", "image/png"],
-      ["asciidoc", "text/plain"],
-    ]);
+  private static readonly CT_BY_INPUT: ReadonlyMap<InputFormat, string> = new Map<
+    InputFormat,
+    string
+  >([
+    ["pdf", "application/pdf"],
+    ["md", "text/markdown"],
+    ["html", "text/html"],
+    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ["pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+    ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+    ["image", "image/png"],
+    ["asciidoc", "text/plain"],
+  ]);
 
   constructor(config: DoclingAPIConfig | string) {
-    this.config =
-      typeof config === "string" ? { type: "api", baseUrl: config } : config;
+    this.config = typeof config === "string" ? { type: "api", baseUrl: config } : config;
     const cfg =
       typeof config === "string"
         ? { baseUrl: config }
@@ -87,17 +79,16 @@ export class DoclingAPIClient implements DoclingAPI {
             baseUrl: config.baseUrl,
             ...(config.timeout && { timeout: config.timeout }),
             ...(config.retries && { retries: config.retries }),
-            ...(config.headers && { headers: config.headers }),
+            headers: {
+              ...(config.apiKey && { "X-Api-Key": config.apiKey }),
+              ...(config.headers && config.headers),
+            },
           };
     this.http = new HttpClient(cfg);
     this.files = new FileService(this.http);
 
     if (typeof config !== "string" && config.progress) {
-      this.progressManager = new ProgressTracker(
-        this.http,
-        config.baseUrl,
-        config.progress
-      );
+      this.progressManager = new ProgressTracker(this.http, config.baseUrl, config.progress);
     }
   }
 
@@ -269,6 +260,7 @@ export class DoclingAPIClient implements DoclingAPI {
 
   /**
    * Convert document and return as downloadable files
+   * Uses synchronous API endpoint with ZIP target for reliable file download
    */
   async convertToFile(
     file: Buffer | string,
@@ -285,10 +277,65 @@ export class DoclingAPIClient implements DoclingAPI {
     if (progress) {
       return this.convertWithAutoProgress(file, filename, options, progress);
     }
-    const mergedOptions = this.mergeWithDefaults(options);
-    return this.files.convertToFile(file, filename, {
-      ...mergedOptions,
-    });
+    
+    try {
+      const mergedOptions = this.mergeWithDefaults(options);
+      
+      // Convert string to Buffer if needed
+      const fileBuffer = typeof file === 'string' ? Buffer.from(file) : file;
+      
+      // Use synchronous convert endpoint with ZIP target as per OpenAPI spec
+      // This is more reliable than async task manager for file downloads
+      const fileData = await this.prepareFiles(fileBuffer, filename, mergedOptions.from_formats);
+      
+      const response = await this.http.uploadFiles<Buffer>(
+        "/v1/convert/file",
+        fileData,
+        { ...mergedOptions, target_type: "zip" },
+        { accept: "bytes" }
+      );
+      
+      // For ZIP responses, the response.data is the Buffer containing the ZIP file
+      if (response.data && Buffer.isBuffer(response.data)) {
+        const { Readable } = await import('node:stream');
+        
+        const contentDisposition = response.headers["content-disposition"] || "";
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        const zipFilename = filenameMatch?.[1]
+          ? filenameMatch[1].replace(/['"]/g, "")
+          : `converted_${filename}.zip`;
+        
+        // Create a readable stream from the buffer
+        const fileStream = Readable.from(response.data);
+        
+        return {
+          success: true,
+          fileStream,
+          fileMetadata: {
+            filename: zipFilename,
+            contentType: "application/zip",
+            size: response.data.length,
+          },
+        };
+      }
+      
+      return {
+        success: false,
+        error: {
+          message: "Expected ZIP file but received unexpected response format",
+          details: { headers: response.headers, status: response.status },
+        },
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'convertToFile failed',
+          details: error,
+        },
+      };
+    }
   }
 
   /**
@@ -302,12 +349,10 @@ export class DoclingAPIClient implements DoclingAPI {
   /**
    * Convert documents from URLs or base64 sources (synchronous)
    */
-  async convertSource(
-    request: ConvertDocumentsRequest
-  ): Promise<ConvertDocumentResponse> {
+  async convertSource(request: ConvertDocumentsRequest): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse> {
     this.validateConvertRequest(request);
 
-    const response = await this.http.postJson<ConvertDocumentResponse>(
+    const response = await this.http.postJson<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>(
       "/v1/convert/source",
       request
     );
@@ -317,22 +362,16 @@ export class DoclingAPIClient implements DoclingAPI {
   /**
    * Convert uploaded files (synchronous)
    */
-  async convertFile(
-    params: FileUploadParams
-  ): Promise<ConvertDocumentResponse> {
+  async convertFile(params: FileUploadParams): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse> {
     const { files, filename, ...options } = params;
 
     if (options) {
       ValidationUtils.assertValidConversionOptions(options);
     }
 
-    const fileData = await this.prepareFiles(
-      files,
-      filename,
-      options.from_formats
-    );
+    const fileData = await this.prepareFiles(files, filename, options.from_formats);
 
-    const response = await this.http.uploadFiles<ConvertDocumentResponse>(
+    const response = await this.http.uploadFiles<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>(
       "/v1/convert/file",
       fileData,
       { ...options, target_type: "inbody" }
@@ -344,9 +383,7 @@ export class DoclingAPIClient implements DoclingAPI {
   /**
    * Convert documents from URLs or base64 sources (asynchronous)
    */
-  async convertSourceAsync(
-    request: ConvertDocumentsRequest
-  ): Promise<AsyncConversionTask> {
+  async convertSourceAsync(request: ConvertDocumentsRequest): Promise<AsyncConversionTask> {
     this.validateConvertRequest(request);
 
     const response = await this.http.postJson<TaskStatusResponse>(
@@ -372,11 +409,35 @@ export class DoclingAPIClient implements DoclingAPI {
       ValidationUtils.assertValidConversionOptions(options);
     }
 
-    const fileData = await this.prepareFiles(
-      files,
-      filename,
-      options.from_formats
+    const fileData = await this.prepareFiles(files, filename, options.from_formats);
+
+    const response = await this.http.uploadFiles<TaskStatusResponse>(
+      "/v1/convert/file/async",
+      fileData,
+      { ...options, target_type: "inbody" }
     );
+
+    const taskData = response.data;
+    return this.createAsyncTask(taskData);
+  }
+
+  /**
+   * Convert uploaded files (asynchronous) with ZIP output
+   * Returns a task that produces ZIP file results instead of JSON
+   * @param params - File upload parameters
+   * @param progressOverride - Optional progress config to override client config
+   */
+  async convertFileAsyncToZip(
+    params: FileUploadParams,
+    _progressOverride?: ProgressConfig
+  ): Promise<AsyncConversionTask> {
+    const { files, filename, ...options } = params;
+
+    if (options) {
+      ValidationUtils.assertValidConversionOptions(options);
+    }
+
+    const fileData = await this.prepareFiles(files, filename, options.from_formats);
 
     const response = await this.http.uploadFiles<TaskStatusResponse>(
       "/v1/convert/file/async",
@@ -389,23 +450,34 @@ export class DoclingAPIClient implements DoclingAPI {
   }
 
   /**
-   * Poll task status
+   * Poll task status with wait parameter for long polling
    */
-  async pollTaskStatus(taskId: string): Promise<TaskStatusResponse> {
-    const response = await this.http.getJson<TaskStatusResponse>(
-      `/v1/status/poll/${taskId}`
-    );
-    return response.data;
+  async pollTaskStatus(taskId: string, waitSeconds = 1): Promise<TaskStatusResponse> {
+    try {
+      const response = await this.http.getJson<TaskStatusResponse>(
+        `/v1/status/poll/${taskId}?wait=${waitSeconds}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.normalizeError(error);
+    }
   }
 
   /**
    * Get task result
    */
-  async getTaskResult(taskId: string): Promise<ConvertDocumentResponse> {
-    const response = await this.http.getJson<ConvertDocumentResponse>(
-      `/v1/result/${taskId}`
-    );
-    return response.data;
+  async getTaskResult(taskId: string): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse> {
+    try {
+      const response = await this.http.getJson<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>(`/v1/result/${taskId}`);
+      
+      // Only normalize if it's a ConvertDocumentResponse (has document property)
+      if (hasDocumentContent(response.data)) {
+        return this.normalizeDocumentResponse(response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw this.normalizeError(error);
+    }
   }
 
   /**
@@ -419,20 +491,16 @@ export class DoclingAPIClient implements DoclingAPI {
       });
 
       const contentType = res.headers["content-type"] || "";
-      if (
-        res.fileStream &&
-        contentType.includes("application/zip") &&
-        res.fileMetadata
-      ) {
+      if (res.fileStream && contentType.includes("application/zip") && res.fileMetadata) {
         return {
-          success: true,
+          success: true as const,
           fileStream: res.fileStream,
           fileMetadata: res.fileMetadata,
         };
       }
 
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Expected ZIP file but received different content type",
           details: { headers: res.headers, status: res.status },
@@ -440,10 +508,9 @@ export class DoclingAPIClient implements DoclingAPI {
       };
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
-          message:
-            error instanceof Error ? error.message : "ZIP download failed",
+          message: error instanceof Error ? error.message : "ZIP download failed",
           details: error,
         },
       };
@@ -533,18 +600,21 @@ export class DoclingAPIClient implements DoclingAPI {
       };
 
       const result = await this.convertSource(request);
-      const normalizedResult = this.normalizeDocumentResponse(
-        result,
-        options.to_formats?.[0]
-      );
-
-      return {
-        success: true,
-        data: normalizedResult,
-      };
+      
+      // Standard conversions should always return document content
+      if (hasDocumentContent(result)) {
+        // This is the expected ConvertDocumentResponse
+        const normalizedResult = this.normalizeDocumentResponse(result, options.to_formats?.[0]);
+        return {
+          success: true as const,
+          data: normalizedResult,
+        };
+      }
+        // Unexpected: got presigned URL response for standard conversion
+        throw new Error("Unexpected presigned URL response for standard conversion");
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: this.normalizeError(error),
       };
     }
@@ -566,13 +636,19 @@ export class DoclingAPIClient implements DoclingAPI {
         ...options,
       });
 
-      return {
-        success: true,
-        data: result,
-      };
+      // Standard conversions should always return document content
+      if (hasDocumentContent(result)) {
+        // This is the expected ConvertDocumentResponse
+        return {
+          success: true as const,
+          data: result,
+        };
+      }
+        // Unexpected: got presigned URL response for standard conversion
+        throw new Error("Unexpected presigned URL response for standard conversion");
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: this.normalizeError(error),
       };
     }
@@ -593,13 +669,19 @@ export class DoclingAPIClient implements DoclingAPI {
         ...options,
       });
 
-      return {
-        success: true,
-        data: result,
-      };
+      // Standard conversions should always return document content
+      if (hasDocumentContent(result)) {
+        // This is the expected ConvertDocumentResponse
+        return {
+          success: true as const,
+          data: result,
+        };
+      }
+        // Unexpected: got presigned URL response for standard conversion
+        throw new Error("Unexpected presigned URL response for standard conversion");
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: this.normalizeError(error),
       };
     }
@@ -618,7 +700,7 @@ export class DoclingAPIClient implements DoclingAPI {
       return this.convertFromBuffer(buffer, filename, options);
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: this.normalizeError(error),
       };
     }
@@ -628,22 +710,11 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert from S3 source
    */
   async convertFromS3(
-    s3Config: {
-      bucket: string;
-      key: string;
-      region?: string;
-      access_key_id?: string;
-      secret_access_key?: string;
-      session_token?: string;
-      endpoint_url?: string;
-    },
+    s3Config: S3Config,
     options: ConversionOptions = {}
   ): Promise<ConversionResult> {
     try {
-      const s3Source: S3Source = {
-        kind: "s3",
-        ...s3Config,
-      };
+      const s3Source: S3Source = this.mapToApiS3Source(s3Config);
 
       const request: ConvertDocumentsRequest = {
         options: this.mergeWithDefaults(options),
@@ -651,18 +722,21 @@ export class DoclingAPIClient implements DoclingAPI {
       };
 
       const result = await this.convertSource(request);
-      const normalizedResult = this.normalizeDocumentResponse(
-        result,
-        options.to_formats?.[0]
-      );
-
-      return {
-        success: true,
-        data: normalizedResult,
-      };
+      
+      // Standard conversions should always return document content
+      if (hasDocumentContent(result)) {
+        // This is the expected ConvertDocumentResponse
+        const normalizedResult = this.normalizeDocumentResponse(result, options.to_formats?.[0]);
+        return {
+          success: true as const,
+          data: normalizedResult,
+        };
+      }
+        // Unexpected: got presigned URL response for standard conversion
+        throw new Error("Unexpected presigned URL response for standard conversion");
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: this.normalizeError(error),
       };
     }
@@ -672,41 +746,123 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert with custom target (S3, PUT, etc.)
    */
   async convertWithTarget(
-    sources: (HttpSource | FileSource | S3Source)[],
-    target: ConversionTarget,
+    sources: (HttpSource | FileSource | S3Source | (S3Config & { kind: "s3" }))[],
+    target: ConversionTarget | (S3Config & { kind: "s3" }),
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<TargetConversionResult> {
     try {
+      // Map user-friendly S3 configs to API format
+      const mappedSources: (HttpSource | FileSource | S3Source)[] = sources.map((source) => {
+        if (
+          source.kind === "s3" &&
+          this.isUserFriendlyS3Config(source as unknown as Record<string, unknown>)
+        ) {
+          return this.mapToApiS3Source(source as unknown as S3Config);
+        }
+        return source as HttpSource | FileSource | S3Source;
+      });
+
+      const mappedTarget: ConversionTarget =
+        target.kind === "s3" &&
+        this.isUserFriendlyS3Config(target as unknown as Record<string, unknown>)
+          ? this.mapToApiS3Target(target as unknown as S3Config)
+          : (target as ConversionTarget);
+
       const request: ConvertDocumentsRequest = {
         options: this.mergeWithDefaults(options),
-        sources,
-        target,
+        sources: mappedSources,
+        target: mappedTarget,
       };
 
       const result = await this.convertSource(request);
 
-      if (target.kind === "put") {
+      // Target operations should always return PresignedUrlConvertDocumentResponse
+      // If we get a document response, something is wrong with the API
+      if (!hasDocumentContent(result)) {
+        // This is the expected PresignedUrlConvertDocumentResponse
         return {
-          success: true,
-          data: result satisfies PresignedUrlConvertDocumentResponse as PresignedUrlConvertDocumentResponse,
+          success: true as const,
+          data: result,
         };
       }
-
-      const normalizedResult = this.normalizeDocumentResponse(
-        result,
-        options.to_formats?.[0]
-      );
-
-      return {
-        success: true,
-        data: normalizedResult,
-      };
+        // Unexpected: got document content for target operation
+        // This shouldn't happen for target operations, but handle gracefully
+        throw new Error("Unexpected document content in target conversion response");
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: this.normalizeError(error),
       };
     }
+  }
+
+  /**
+   * Map user-friendly S3Config to API S3Source format
+   */
+  private mapToApiS3Source(config: S3Config): S3Source {
+    const region = config.region || process.env.AWS_REGION || "us-east-1";
+    const endpoint = config.endpoint || `s3.${region}.amazonaws.com`;
+    const access_key = config.access_key_id || process.env.AWS_ACCESS_KEY_ID;
+    const secret_key = config.secret_access_key || process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (!access_key || !secret_key) {
+      throw new Error(
+        "AWS credentials are required. Provide access_key_id and secret_access_key or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
+      );
+    }
+
+    if (!config.key) {
+      throw new Error("S3 key is required for source operations.");
+    }
+
+    return {
+      kind: "s3",
+      endpoint,
+      verify_ssl: config.verify_ssl ?? true,
+      access_key,
+      secret_key,
+      bucket: config.bucket,
+      key_prefix: config.key,
+    };
+  }
+
+  /**
+   * Check if an S3 config object uses user-friendly field names
+   */
+  private isUserFriendlyS3Config(config: Record<string, unknown>): boolean {
+    return (
+      config.kind === "s3" &&
+      ("region" in config ||
+        "access_key_id" in config ||
+        "secret_access_key" in config ||
+        !("endpoint" in config))
+    );
+  }
+
+  /**
+   * Map user-friendly S3Config to API S3Target format
+   */
+  private mapToApiS3Target(config: S3Config): ConversionTarget {
+    const region = config.region || process.env.AWS_REGION || "us-east-1";
+    const endpoint = config.endpoint || `s3.${region}.amazonaws.com`;
+    const access_key = config.access_key_id || process.env.AWS_ACCESS_KEY_ID;
+    const secret_key = config.secret_access_key || process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (!access_key || !secret_key) {
+      throw new Error(
+        "AWS credentials are required. Provide access_key_id and secret_access_key or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
+      );
+    }
+
+    return {
+      kind: "s3",
+      endpoint,
+      verify_ssl: config.verify_ssl ?? true,
+      access_key,
+      secret_key,
+      bucket: config.bucket,
+      key_prefix: config.key || "",
+    };
   }
 
   /**
@@ -762,8 +918,7 @@ export class DoclingAPIClient implements DoclingAPI {
       (fmt ? DoclingAPIClient.EXT_BY_INPUT.get(fmt) : undefined) ?? "";
 
     const pickContentType = (fmt?: InputFormat): string =>
-      (fmt ? DoclingAPIClient.CT_BY_INPUT.get(fmt) : undefined) ??
-      "application/octet-stream";
+      (fmt ? DoclingAPIClient.CT_BY_INPUT.get(fmt) : undefined) ?? "application/octet-stream";
 
     const preparedFiles = await Promise.all(
       fileArray.map(async (file, index) => {
@@ -804,46 +959,64 @@ export class DoclingAPIClient implements DoclingAPI {
   private createAsyncTask(taskData: TaskStatusResponse): AsyncConversionTask {
     if (!taskData.task_id) {
       throw new Error(
-        `Invalid task response: missing task_id. Received: ${JSON.stringify(
-          taskData
-        )}`
+        `Invalid task response: missing task_id. Received: ${JSON.stringify(taskData)}`
       );
     }
 
-    return {
+    // Create a simple event emitter implementation
+    const eventListeners: Record<string, Array<(...args: unknown[]) => void>> = {};
+
+    const task = {
       taskId: taskData.task_id,
       status: taskData.task_status,
       position: taskData.task_position,
       meta: taskData.task_meta,
+
+      on(event: string, listener: (...args: unknown[]) => void) {
+        if (!eventListeners[event]) {
+          eventListeners[event] = [];
+        }
+        eventListeners[event].push(listener);
+        return this;
+      },
+
+      emit(event: string, ...args: unknown[]) {
+        const listeners = eventListeners[event] || [];
+        for (const listener of listeners) {
+          listener(...args);
+        }
+      },
+
       poll: () => this.pollTaskStatus(taskData.task_id),
       waitForCompletion: () => this.waitForTaskCompletion(taskData.task_id),
       getResult: () => this.getTaskResult(taskData.task_id),
-    } as AsyncConversionTask;
+    };
+
+    return task as AsyncConversionTask;
   }
 
   /**
    * Wait for task completion by polling status until terminal state
+   * Uses long polling with wait parameter for efficient polling
    */
-  private async waitForTaskCompletion(
-    taskId: string
-  ): Promise<TaskStatusResponse> {
-    const maxMs = 15 * 60 * 1000;
-    const intervalMs = 2000;
+  private async waitForTaskCompletion(taskId: string): Promise<TaskStatusResponse> {
+    const maxMs = 15 * 60 * 1000; // 15 minutes max
+    const waitSeconds = 10; // Wait up to 10 seconds per request
     const start = Date.now();
 
     while (Date.now() - start < maxMs) {
-      const status = await this.pollTaskStatus(taskId);
-      if (
-        status.task_status === "success" ||
-        status.task_status === "failure"
-      ) {
+      // Use long polling - server will wait up to waitSeconds for completion
+      const status = await this.pollTaskStatus(taskId, waitSeconds);
+      if (status.task_status === "success" || status.task_status === "failure") {
         return status;
       }
 
-      await delay(intervalMs);
+      // If still pending/started, continue polling
+      // No additional delay needed since server already waited
     }
 
-    return this.pollTaskStatus(taskId);
+    // Final poll without wait parameter
+    return this.pollTaskStatus(taskId, 0);
   }
 
   /**
@@ -871,15 +1044,9 @@ export class DoclingAPIClient implements DoclingAPI {
     ) {
       const err = error as Record<string, unknown>;
       return {
-        message:
-          typeof err.message === "string" ? err.message : "Network error",
+        message: typeof err.message === "string" ? err.message : "Network error",
         code: "NETWORK_ERROR",
-        details:
-          "response" in err
-            ? err.response
-            : "details" in err
-            ? err.details
-            : err,
+        details: "response" in err ? err.response : "details" in err ? err.details : err,
       };
     }
 
@@ -936,11 +1103,16 @@ export class DoclingAPIClient implements DoclingAPI {
             progressManager.stopTracking().then(() => {
               this.getTaskResult(task.taskId)
                 .then((result) => {
-                  resolve({
-                    success: true,
-                    data: result,
-                    taskId: task.taskId,
-                  });
+                  // Expect document content for standard conversions
+                  if (hasDocumentContent(result)) {
+                    resolve({
+                      success: true as const,
+                      data: result,
+                      taskId: task.taskId,
+                    });
+                  } else {
+                    reject(new Error("Unexpected presigned URL response for standard conversion"));
+                  }
                 })
                 .catch(reject);
             });
@@ -956,7 +1128,7 @@ export class DoclingAPIClient implements DoclingAPI {
         await progressManager.stopTracking();
       }
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Auto progress conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -981,17 +1153,8 @@ export class DoclingAPIClient implements DoclingAPI {
     error?: { message: string; details?: string };
   }> {
     try {
-      const request = this.createStreamRequest(
-        file,
-        filename,
-        options,
-        returnAsZip
-      );
-      return await this.executeStreamRequest(
-        request,
-        outputStream,
-        returnAsZip
-      );
+      const request = this.createStreamRequest(file, filename, options, returnAsZip);
+      return await this.executeStreamRequest(request, outputStream, returnAsZip);
     } catch (error) {
       return this.createStreamError("Failed to stream conversion", error);
     }
@@ -1029,10 +1192,7 @@ export class DoclingAPIClient implements DoclingAPI {
   }> {
     const streamExecutors = new Map([
       ["zip", () => this.executeZipStreamRequest(request, outputStream)],
-      [
-        "content",
-        () => this.executeContentStreamRequest(request, outputStream),
-      ],
+      ["content", () => this.executeContentStreamRequest(request, outputStream)],
     ]);
 
     const executorKey = returnAsZip ? "zip" : "content";
@@ -1063,29 +1223,20 @@ export class DoclingAPIClient implements DoclingAPI {
     });
 
     if (primary.fileStream && primary.status === 200) {
-      return await this.handleFileStreamResponse(
-        primary.fileStream,
-        outputStream
-      );
+      return await this.handleFileStreamResponse(primary.fileStream, outputStream);
     }
 
     try {
       const task = await this.convertSourceAsync(request);
       await task.waitForCompletion();
 
-      const result = await this.http.requestFileStream(
-        `/v1/result/${task.taskId}`,
-        {
-          method: "GET",
-          headers: { Accept: "application/zip" },
-        }
-      );
+      const result = await this.http.requestFileStream(`/v1/result/${task.taskId}`, {
+        method: "GET",
+        headers: { Accept: "application/zip" },
+      });
 
       if (result.fileStream && result.status === 200) {
-        return await this.handleFileStreamResponse(
-          result.fileStream,
-          outputStream
-        );
+        return await this.handleFileStreamResponse(result.fileStream, outputStream);
       }
 
       return await this.handleEmptyStreamResponse(outputStream);
@@ -1117,25 +1268,16 @@ export class DoclingAPIClient implements DoclingAPI {
     success: boolean;
     error?: { message: string; details?: string };
   }> {
-    const response = await this.http.requestJson<unknown>(
-      "/v1/convert/source",
-      {
-        method: "POST",
-        body: JSON.stringify(request),
-      }
-    );
+    const response = await this.http.requestJson<unknown>("/v1/convert/source", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
 
     if (this.isReadableStream(response.data)) {
-      return this.handleFileStreamResponse(
-        response.data as NodeJS.ReadableStream,
-        outputStream
-      );
+      return this.handleFileStreamResponse(response.data as NodeJS.ReadableStream, outputStream);
     }
 
-    return this.handleDataStreamResponse(
-      response.data as unknown,
-      outputStream
-    );
+    return this.handleDataStreamResponse(response.data as unknown, outputStream);
   }
 
   /**
@@ -1146,7 +1288,7 @@ export class DoclingAPIClient implements DoclingAPI {
     error: unknown
   ): { success: boolean; error: { message: string; details?: string } } {
     return {
-      success: false,
+      success: false as const,
       error: {
         message,
         details: error instanceof Error ? error.message : String(error),
@@ -1229,8 +1371,7 @@ export class DoclingAPIClient implements DoclingAPI {
       });
     }
 
-    const isStillProcessing =
-      status.task_status === "pending" || status.task_status === "started";
+    const isStillProcessing = status.task_status === "pending" || status.task_status === "started";
     const hasMorePolls = pollCount < maxPolls;
 
     if (isStillProcessing && hasMorePolls) {
@@ -1267,10 +1408,10 @@ export class DoclingAPIClient implements DoclingAPI {
     const inputType = file.stream
       ? "stream"
       : file.filePath
-      ? "filePath"
-      : file.buffer
-      ? "buffer"
-      : null;
+        ? "filePath"
+        : file.buffer
+          ? "buffer"
+          : null;
 
     if (!inputType) {
       throw new Error("Either buffer, filePath, or stream must be provided");
@@ -1298,11 +1439,7 @@ export class DoclingAPIClient implements DoclingAPI {
           if (!file.filePath) {
             throw new Error("File path is required for file conversion");
           }
-          return this.convertFileWithPipeline(
-            file.filePath,
-            options,
-            onProgress
-          );
+          return this.convertFileWithPipeline(file.filePath, options, onProgress);
         },
       ],
       [
@@ -1336,7 +1473,7 @@ export class DoclingAPIClient implements DoclingAPI {
     return new Promise((resolve) => {
       fileStream.on("error", (error: Error) => {
         resolve({
-          success: false,
+          success: false as const,
           error: {
             message: "Stream error",
             details: error.message,
@@ -1384,10 +1521,10 @@ export class DoclingAPIClient implements DoclingAPI {
       const contentType = document.md_content
         ? "md_content"
         : document.html_content
-        ? "html_content"
-        : document.text_content
-        ? "text_content"
-        : "default";
+          ? "html_content"
+          : document.text_content
+            ? "text_content"
+            : "default";
 
       const extractor = contentExtractors.get(contentType);
       if (!extractor) {
@@ -1414,7 +1551,7 @@ export class DoclingAPIClient implements DoclingAPI {
   }> {
     outputStream.end();
     return {
-      success: false,
+      success: false as const,
       error: {
         message: "No stream or data received from API",
         details: "Response did not contain expected file stream or data",
@@ -1447,12 +1584,7 @@ export class DoclingAPIClient implements DoclingAPI {
       }
 
       if (Buffer.isBuffer(file) && file.length > 10 * 1024 * 1024) {
-        return this.convertWithAsyncProgress(
-          file,
-          filename,
-          options,
-          onProgress
-        );
+        return this.convertWithAsyncProgress(file, filename, options, onProgress);
       }
 
       if (onProgress) {
@@ -1501,7 +1633,7 @@ export class DoclingAPIClient implements DoclingAPI {
       }
 
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Conversion with progress failed",
           details: error instanceof Error ? error.message : String(error),
@@ -1541,9 +1673,7 @@ export class DoclingAPIClient implements DoclingAPI {
         if (file.buffer.length === 0) {
           errors.push("File is empty");
         } else if (file.buffer.length > 100 * 1024 * 1024) {
-          warnings.push(
-            "File is very large and may take a long time to process"
-          );
+          warnings.push("File is very large and may take a long time to process");
         }
       }
 
@@ -1630,18 +1760,20 @@ export class DoclingAPIClient implements DoclingAPI {
 
       if (finalStatus.task_status === "success") {
         const finalResult = await this.getTaskResult(task.taskId);
-        return {
-          success: true,
-          data: finalResult,
-          taskId: task.taskId,
-        };
+        // WebSocket conversions should return document content
+        if (hasDocumentContent(finalResult)) {
+          return {
+            success: true as const,
+            data: finalResult,
+            taskId: task.taskId,
+          };
+        }
+          throw new Error("Unexpected presigned URL response for WebSocket conversion");
       }
-      throw new Error(
-        `WebSocket conversion failed with status: ${finalStatus.task_status}`
-      );
+      throw new Error(`WebSocket conversion failed with status: ${finalStatus.task_status}`);
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "WebSocket conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -1749,18 +1881,20 @@ export class DoclingAPIClient implements DoclingAPI {
 
       if (finalStatus.task_status === "success") {
         const finalResult = await this.getTaskResult(task.taskId);
-        return {
-          success: true,
-          data: finalResult,
-          taskId: task.taskId,
-        };
+        // WebSocket conversions should return document content
+        if (hasDocumentContent(finalResult)) {
+          return {
+            success: true as const,
+            data: finalResult,
+            taskId: task.taskId,
+          };
+        }
+          throw new Error("Unexpected presigned URL response for WebSocket conversion");
       }
-      throw new Error(
-        `WebSocket file conversion failed with status: ${finalStatus.task_status}`
-      );
+      throw new Error(`WebSocket file conversion failed with status: ${finalStatus.task_status}`);
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "WebSocket file conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -1807,9 +1941,7 @@ export class DoclingAPIClient implements DoclingAPI {
               onProgress({
                 stage: pipelineProgress.stage,
                 percentage: pipelineProgress.percentage,
-                message: `Pipeline ${pipelineProgress.stage}: ${filePath
-                  .split("/")
-                  .pop()}`,
+                message: `Pipeline ${pipelineProgress.stage}: ${filePath.split("/").pop()}`,
                 uploadedBytes: pipelineProgress.uploadedBytes,
                 totalBytes: pipelineProgress.totalBytes,
                 bytesPerSecond: pipelineProgress.bytesPerSecond,
@@ -1820,12 +1952,12 @@ export class DoclingAPIClient implements DoclingAPI {
       );
 
       return {
-        success: true,
+        success: true as const,
         data: result.data,
       };
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Pipeline file conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -1885,12 +2017,12 @@ export class DoclingAPIClient implements DoclingAPI {
       );
 
       return {
-        success: true,
+        success: true as const,
         data: result.data,
       };
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Pipeline stream conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -1936,12 +2068,12 @@ export class DoclingAPIClient implements DoclingAPI {
       );
 
       return {
-        success: true,
+        success: true as const,
         data: result.data,
       };
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Direct stream conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -2005,11 +2137,7 @@ export class DoclingAPIClient implements DoclingAPI {
         );
 
         try {
-          const result = await this.convertInputByType(
-            file,
-            options,
-            progressWrapper
-          );
+          const result = await this.convertInputByType(file, options, progressWrapper);
           return {
             filename: file.filename,
             success: result.success,
@@ -2018,7 +2146,7 @@ export class DoclingAPIClient implements DoclingAPI {
         } catch (error) {
           return {
             filename: file.filename,
-            success: false,
+            success: false as const,
             error: error instanceof Error ? error.message : String(error),
           };
         }
@@ -2031,11 +2159,9 @@ export class DoclingAPIClient implements DoclingAPI {
         ? settled.value
         : {
             filename: "unknown",
-            success: false,
+            success: false as const,
             error:
-              settled.reason instanceof Error
-                ? settled.reason.message
-                : String(settled.reason),
+              settled.reason instanceof Error ? settled.reason.message : String(settled.reason),
           }
     );
 
@@ -2062,18 +2188,9 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   private static readonly EXT_CT_MAP: ReadonlyMap<string, string> = new Map([
     ["pdf", "application/pdf"],
-    [
-      "docx",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ],
-    [
-      "pptx",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ],
-    [
-      "xlsx",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ],
+    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ["pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+    ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
     ["html", "text/html"],
     ["md", "text/markdown"],
     ["txt", "text/plain"],
@@ -2081,10 +2198,7 @@ export class DoclingAPIClient implements DoclingAPI {
 
   private getContentType(filename: string): string {
     const ext = filename.split(".").pop()?.toLowerCase();
-    return (
-      (ext ? DoclingAPIClient.EXT_CT_MAP.get(ext) : undefined) ||
-      "application/octet-stream"
-    );
+    return (ext ? DoclingAPIClient.EXT_CT_MAP.get(ext) : undefined) || "application/octet-stream";
   }
 
   /**
@@ -2126,12 +2240,7 @@ export class DoclingAPIClient implements DoclingAPI {
       }
 
       const maxPolls = 60;
-      const status = await this.pollRecursively(
-        task.taskId,
-        0,
-        maxPolls,
-        onProgress
-      );
+      const status = await this.pollRecursively(task.taskId, 0, maxPolls, onProgress);
 
       if (status.task_status === "success") {
         const result = await this.getTaskResult(task.taskId);
@@ -2144,15 +2253,19 @@ export class DoclingAPIClient implements DoclingAPI {
           });
         }
 
-        return {
-          success: true,
-          data: result,
-        };
+        // Async conversions should return document content
+        if (hasDocumentContent(result)) {
+          return {
+            success: true as const,
+            data: result,
+          };
+        }
+          throw new Error("Unexpected presigned URL response for async conversion");
       }
       throw new Error(`Task failed with status: ${status.task_status}`);
     } catch (error) {
       return {
-        success: false,
+        success: false as const,
         error: {
           message: "Async conversion failed",
           details: error instanceof Error ? error.message : String(error),
@@ -2215,12 +2328,7 @@ export class DoclingAPIClient implements DoclingAPI {
   updateConfig(updates: Partial<DoclingAPIConfig>): void {
     this.config = { ...this.config, ...updates };
 
-    if (
-      updates.baseUrl ||
-      updates.timeout ||
-      updates.retries ||
-      updates.headers
-    ) {
+    if (updates.baseUrl || updates.timeout || updates.retries || updates.headers) {
       this.http = new HttpClient({
         baseUrl: this.config.baseUrl,
         ...(this.config.timeout && { timeout: this.config.timeout }),

@@ -22,7 +22,11 @@ export interface DoclingClientConfig {
  * Common error base class
  */
 export class DoclingError extends Error {
-  constructor(message: string, public code?: string, public details?: unknown) {
+  constructor(
+    message: string,
+    public code?: string,
+    public details?: unknown
+  ) {
     super(message);
     this.name = "DoclingError";
   }
@@ -46,7 +50,11 @@ export class DoclingNetworkError extends DoclingError {
  * Validation errors
  */
 export class DoclingValidationError extends DoclingError {
-  constructor(message: string, public field?: string, public value?: unknown) {
+  constructor(
+    message: string,
+    public field?: string,
+    public value?: unknown
+  ) {
     super(message, "VALIDATION_ERROR");
     this.name = "DoclingValidationError";
   }
@@ -57,10 +65,7 @@ export class DoclingValidationError extends DoclingError {
  */
 export class DoclingTimeoutError extends DoclingError {
   constructor(timeout: number, operation?: string) {
-    super(
-      `Operation ${operation || "unknown"} timed out after ${timeout}ms`,
-      "TIMEOUT_ERROR"
-    );
+    super(`Operation ${operation || "unknown"} timed out after ${timeout}ms`, "TIMEOUT_ERROR");
     this.name = "DoclingTimeoutError";
   }
 }

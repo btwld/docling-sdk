@@ -33,13 +33,9 @@ export const OutputFormatSchema = z.enum(
   }
 );
 
-export const OcrEngineSchema = z.enum(
-  ["easyocr", "tesserocr", "tesseract", "rapidocr", "ocrmac"],
-  {
-    error:
-      "Invalid OCR engine. Supported engines: easyocr, tesserocr, tesseract, rapidocr, ocrmac",
-  }
-);
+export const OcrEngineSchema = z.enum(["easyocr", "tesserocr", "tesseract", "rapidocr", "ocrmac"], {
+  error: "Invalid OCR engine. Supported engines: easyocr, tesserocr, tesseract, rapidocr, ocrmac",
+});
 
 export const AcceleratorDeviceSchema = z.enum(["auto", "cpu", "cuda", "mps"], {
   error: "Invalid accelerator device. Supported devices: auto, cpu, cuda, mps",
@@ -114,13 +110,9 @@ export const OcrOptionsSchema = z.discriminatedUnion("kind", [
   OcrMacOptionsSchema,
 ]);
 
-export const PdfBackendSchema = z.enum(
-  ["pypdfium2", "dlparse_v1", "dlparse_v2", "dlparse_v4"],
-  {
-    error:
-      "Invalid PDF backend. Supported backends: pypdfium2, dlparse_v1, dlparse_v2, dlparse_v4",
-  }
-);
+export const PdfBackendSchema = z.enum(["pypdfium2", "dlparse_v1", "dlparse_v2", "dlparse_v4"], {
+  error: "Invalid PDF backend. Supported backends: pypdfium2, dlparse_v1, dlparse_v2, dlparse_v4",
+});
 
 export const TableModeSchema = z.enum(["fast", "accurate"], {
   error: "Invalid table mode. Supported modes: fast, accurate",
@@ -133,32 +125,20 @@ export const TableStructureOptionsSchema = z
   })
   .optional();
 
-export const ImageExportModeSchema = z.enum(
-  ["embedded", "placeholder", "referenced"],
-  {
-    error:
-      "Invalid image export mode. Supported modes: embedded, placeholder, referenced",
-  }
-);
+export const ImageExportModeSchema = z.enum(["embedded", "placeholder", "referenced"], {
+  error: "Invalid image export mode. Supported modes: embedded, placeholder, referenced",
+});
 
-export const ProcessingPipelineSchema = z.enum(
-  ["default", "fast", "accurate"],
-  {
-    error:
-      "Invalid processing pipeline. Supported pipelines: default, fast, accurate",
-  }
-);
+export const ProcessingPipelineSchema = z.enum(["default", "fast", "accurate"], {
+  error: "Invalid processing pipeline. Supported pipelines: default, fast, accurate",
+});
 
 /**
  * Task status schema with custom error handling
  */
-export const TaskStatusSchema = z.enum(
-  ["pending", "started", "success", "failure", "cancelled"],
-  {
-    error:
-      "Invalid task status. Supported statuses: pending, started, success, failure, cancelled",
-  }
-);
+export const TaskStatusSchema = z.enum(["pending", "started", "success", "failure", "cancelled"], {
+  error: "Invalid task status. Supported statuses: pending, started, success, failure, cancelled",
+});
 
 /**
  * Conversion options schema with enhanced validation
@@ -374,9 +354,7 @@ export const ConversionOptionsSchema = z
  * CLI convert options schema
  */
 export const CliConvertOptionsSchema = ConversionOptionsSchema.extend({
-  sources: z
-    .array(z.string())
-    .min(1, { error: "At least one source is required" }),
+  sources: z.array(z.string()).min(1, { error: "At least one source is required" }),
   input: z.string().optional(),
   output: z.string().optional(),
   from_formats: z.array(InputFormatSchema).optional(),
@@ -675,9 +653,7 @@ export class ZodValidation {
     return ImageExportModeSchema.safeParse(value).success;
   }
 
-  static isValidProcessingPipeline(
-    value: unknown
-  ): value is ProcessingPipeline {
+  static isValidProcessingPipeline(value: unknown): value is ProcessingPipeline {
     return ProcessingPipelineSchema.safeParse(value).success;
   }
 

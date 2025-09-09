@@ -273,8 +273,7 @@ export class ConnectionPool {
 
     const efficiency =
       stats.totalRequests > 0
-        ? (stats.totalRequests - stats.totalTimeouts - stats.totalErrors) /
-          stats.totalRequests
+        ? (stats.totalRequests - stats.totalTimeouts - stats.totalErrors) / stats.totalRequests
         : 1;
 
     return {

@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import type { HttpClient } from "../api/http";
 import { DoclingWebSocketClient } from "../clients/websocket-client";
 import type { ProgressConfig, ProgressUpdate } from "../types/client";
-import { setTimeout as delay } from "node:timers/promises";
 
 /**
  * No-operation function for default callbacks
@@ -24,11 +24,7 @@ export class ProgressTracker extends EventEmitter {
   private currentTaskId: string | null = null;
   private lastProgressTime = 0;
 
-  constructor(
-    httpClient: HttpClient,
-    baseUrl: string,
-    config: ProgressConfig = {}
-  ) {
+  constructor(httpClient: HttpClient, baseUrl: string, config: ProgressConfig = {}) {
     super();
 
     this.httpClient = httpClient;
@@ -170,10 +166,7 @@ export class ProgressTracker extends EventEmitter {
         const taskData = status.data;
 
         this.handleProgress({
-          stage:
-            taskData.task_status === "success"
-              ? "completed"
-              : taskData.task_status,
+          stage: taskData.task_status === "success" ? "completed" : taskData.task_status,
           ...(taskData.task_status === "success" && { percentage: 100 }),
           message: `Task ${taskData.task_status}`,
           taskId: taskId,
@@ -185,10 +178,7 @@ export class ProgressTracker extends EventEmitter {
           source: "http",
         });
 
-        if (
-          taskData.task_status === "success" ||
-          taskData.task_status === "failure"
-        ) {
+        if (taskData.task_status === "success" || taskData.task_status === "failure") {
           this.handleCompletion(taskData.task_status === "success");
         }
       } catch (error) {
@@ -201,10 +191,7 @@ export class ProgressTracker extends EventEmitter {
   private async setupWebSocketTimeout(taskId: string): Promise<void> {
     await delay(this.config.websocketTimeout);
 
-    if (
-      this.isActive &&
-      Date.now() - this.lastProgressTime > this.config.websocketTimeout
-    ) {
+    if (this.isActive && Date.now() - this.lastProgressTime > this.config.websocketTimeout) {
       console.warn("WebSocket timeout, falling back to HTTP polling");
       this.startHttpPolling(taskId);
     }

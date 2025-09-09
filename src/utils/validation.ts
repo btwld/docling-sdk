@@ -71,9 +71,7 @@ export class ValidationUtils {
   /**
    * Validate processing pipeline
    */
-  static validateProcessingPipeline(
-    pipeline: string
-  ): pipeline is ProcessingPipeline {
+  static validateProcessingPipeline(pipeline: string): pipeline is ProcessingPipeline {
     return ZodValidation.isValidProcessingPipeline(pipeline);
   }
 
@@ -110,13 +108,7 @@ export class ValidationUtils {
     }
 
     const [start, end] = range;
-    return (
-      Number.isInteger(start) &&
-      Number.isInteger(end) &&
-      start > 0 &&
-      end > 0 &&
-      start <= end
-    );
+    return Number.isInteger(start) && Number.isInteger(end) && start > 0 && end > 0 && start <= end;
   }
 
   /**
@@ -127,17 +119,13 @@ export class ValidationUtils {
       return false;
     }
 
-    return languages.every(
-      (lang) => typeof lang === "string" && lang.length > 0
-    );
+    return languages.every((lang) => typeof lang === "string" && lang.length > 0);
   }
 
   /**
    * Validate conversion options
    */
-  static validateConversionOptions(
-    options: ConversionOptions
-  ): ValidationResult {
+  static validateConversionOptions(options: ConversionOptions): ValidationResult {
     const errors: string[] = [];
 
     if (options.from_formats) {
@@ -166,17 +154,11 @@ export class ValidationUtils {
       }
     }
 
-    if (
-      options.pipeline &&
-      !ValidationUtils.validateProcessingPipeline(options.pipeline)
-    ) {
+    if (options.pipeline && !ValidationUtils.validateProcessingPipeline(options.pipeline)) {
       errors.push(`Invalid pipeline: ${options.pipeline}`);
     }
 
-    if (
-      options.page_range &&
-      !ValidationUtils.validatePageRange(options.page_range)
-    ) {
+    if (options.page_range && !ValidationUtils.validatePageRange(options.page_range)) {
       errors.push(
         "Invalid page_range: must be [start, end] where both are positive integers and start <= end"
       );
@@ -189,31 +171,19 @@ export class ValidationUtils {
       errors.push(`Invalid image_export_mode: ${options.image_export_mode}`);
     }
 
-    if (
-      options.ocr_engine &&
-      !ValidationUtils.validateOcrEngine(options.ocr_engine)
-    ) {
+    if (options.ocr_engine && !ValidationUtils.validateOcrEngine(options.ocr_engine)) {
       errors.push(`Invalid ocr_engine: ${options.ocr_engine}`);
     }
 
-    if (
-      options.ocr_lang &&
-      !ValidationUtils.validateOcrLanguages(options.ocr_lang)
-    ) {
+    if (options.ocr_lang && !ValidationUtils.validateOcrLanguages(options.ocr_lang)) {
       errors.push("Invalid ocr_lang: must be an array of non-empty strings");
     }
 
-    if (
-      options.pdf_backend &&
-      !ValidationUtils.validatePdfBackend(options.pdf_backend)
-    ) {
+    if (options.pdf_backend && !ValidationUtils.validatePdfBackend(options.pdf_backend)) {
       errors.push(`Invalid pdf_backend: ${options.pdf_backend}`);
     }
 
-    if (
-      options.table_mode &&
-      !ValidationUtils.validateTableMode(options.table_mode)
-    ) {
+    if (options.table_mode && !ValidationUtils.validateTableMode(options.table_mode)) {
       errors.push(`Invalid table_mode: ${options.table_mode}`);
     }
 
@@ -223,25 +193,18 @@ export class ValidationUtils {
         options.picture_description_area_threshold < 0 ||
         options.picture_description_area_threshold > 1
       ) {
-        errors.push(
-          "picture_description_area_threshold must be a number between 0 and 1"
-        );
+        errors.push("picture_description_area_threshold must be a number between 0 and 1");
       }
     }
 
     if (options.images_scale !== undefined) {
-      if (
-        typeof options.images_scale !== "number" ||
-        options.images_scale <= 0
-      ) {
+      if (typeof options.images_scale !== "number" || options.images_scale <= 0) {
         errors.push("images_scale must be a positive number");
       }
     }
 
     if (options.picture_description_local && options.picture_description_api) {
-      errors.push(
-        "picture_description_local and picture_description_api are mutually exclusive"
-      );
+      errors.push("picture_description_local and picture_description_api are mutually exclusive");
     }
 
     return {
@@ -253,37 +216,25 @@ export class ValidationUtils {
   /**
    * Validate CLI convert options
    */
-  static validateCliConvertOptions(
-    options: CliConvertOptions
-  ): ValidationResult {
+  static validateCliConvertOptions(options: CliConvertOptions): ValidationResult {
     const errors: string[] = [];
 
-    if (
-      !options.sources ||
-      !Array.isArray(options.sources) ||
-      options.sources.length === 0
-    ) {
+    if (!options.sources || !Array.isArray(options.sources) || options.sources.length === 0) {
       errors.push("sources is required and must be a non-empty array");
     } else {
       const invalidSources = options.sources.filter(
         (source) =>
-          !ValidationUtils.validateUrl(source) &&
-          !ValidationUtils.validateFilePath(source)
+          !ValidationUtils.validateUrl(source) && !ValidationUtils.validateFilePath(source)
       );
       if (invalidSources.length > 0) {
         errors.push(
-          `Invalid sources (must be valid URLs or file paths): ${invalidSources.join(
-            ", "
-          )}`
+          `Invalid sources (must be valid URLs or file paths): ${invalidSources.join(", ")}`
         );
       }
     }
 
     if (options.documentTimeout !== undefined) {
-      if (
-        typeof options.documentTimeout !== "number" ||
-        options.documentTimeout <= 0
-      ) {
+      if (typeof options.documentTimeout !== "number" || options.documentTimeout <= 0) {
         errors.push("documentTimeout must be a positive number");
       }
     }
@@ -306,9 +257,7 @@ export class ValidationUtils {
         options.pictureDescriptionAreaThreshold < 0 ||
         options.pictureDescriptionAreaThreshold > 1
       ) {
-        errors.push(
-          "pictureDescriptionAreaThreshold must be a number between 0 and 1"
-        );
+        errors.push("pictureDescriptionAreaThreshold must be a number between 0 and 1");
       }
     }
 
@@ -334,9 +283,7 @@ export class ValidationUtils {
     const result = ValidationUtils.validateConversionOptions(options);
     if (!result.isValid) {
       throw new DoclingValidationError(
-        `Invalid conversion options: ${
-          result.errors?.join(", ") || "Unknown error"
-        }`,
+        `Invalid conversion options: ${result.errors?.join(", ") || "Unknown error"}`,
         "conversion_options",
         options
       );
@@ -350,9 +297,7 @@ export class ValidationUtils {
     const result = ValidationUtils.validateCliConvertOptions(options);
     if (!result.isValid) {
       throw new DoclingValidationError(
-        `Invalid CLI convert options: ${
-          result.errors?.join(", ") || "Unknown error"
-        }`,
+        `Invalid CLI convert options: ${result.errors?.join(", ") || "Unknown error"}`,
         "cli_convert_options",
         options
       );
@@ -362,9 +307,7 @@ export class ValidationUtils {
   /**
    * Validate conversion options using Zod with detailed error reporting
    */
-  static validateConversionOptionsWithZod(
-    options: unknown
-  ): ValidationResult<ConversionOptions> {
+  static validateConversionOptionsWithZod(options: unknown): ValidationResult<ConversionOptions> {
     try {
       const validated = ZodValidation.validateConversionOptions(options);
       return { isValid: true, data: validated as ConversionOptions };
@@ -386,9 +329,7 @@ export class ValidationUtils {
   /**
    * Validate CLI convert options using Zod
    */
-  static validateCliConvertOptionsWithZod(
-    options: unknown
-  ): ValidationResult<CliConvertOptions> {
+  static validateCliConvertOptionsWithZod(options: unknown): ValidationResult<CliConvertOptions> {
     try {
       const validated = ZodValidation.validateCliConvertOptions(options);
       return { isValid: true, data: validated as unknown as CliConvertOptions };

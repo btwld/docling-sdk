@@ -1,4 +1,4 @@
-import type { Readable } from 'node:stream';
+import type { Readable } from "node:stream";
 
 /**
  * Canonical Node.js stream types used across the SDK

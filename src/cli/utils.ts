@@ -36,8 +36,7 @@ export class CliUtils {
       return cmd;
     }
 
-    const looksLikePath =
-      /[\\/]/.test(cmd) || /^[A-Za-z]:\\/.test(cmd) || cmd.startsWith(".");
+    const looksLikePath = /[\\/]/.test(cmd) || /^[A-Za-z]:\\/.test(cmd) || cmd.startsWith(".");
     if (looksLikePath) {
       if (existsSync(cmd)) return cmd;
       const candidates = [".exe", ".cmd", ".bat"].map((ext) => `${cmd}${ext}`);
@@ -129,12 +128,7 @@ export class CliUtils {
     try {
       const result = await this.execute(["--version"], { timeout: 10000 });
       if (!result.success) {
-        throw new CliError(
-          "Failed to get version",
-          result.exitCode,
-          result.stdout,
-          result.stderr
-        );
+        throw new CliError("Failed to get version", result.exitCode, result.stdout, result.stderr);
       }
       return result.stdout.trim();
     } catch (error) {
@@ -148,10 +142,7 @@ export class CliUtils {
   /**
    * Execute a Docling CLI command synchronously
    */
-  async execute(
-    args: string[],
-    options: CliExecutionOptions = {}
-  ): Promise<CliResult> {
+  async execute(args: string[], options: CliExecutionOptions = {}): Promise<CliResult> {
     const doclingPath = this.config.doclingPath || "docling";
     return this.executeCommand(doclingPath, args, options);
   }
@@ -159,10 +150,7 @@ export class CliUtils {
   /**
    * Execute a Docling Tools command synchronously
    */
-  async executeTools(
-    args: string[],
-    options: CliExecutionOptions = {}
-  ): Promise<CliResult> {
+  async executeTools(args: string[], options: CliExecutionOptions = {}): Promise<CliResult> {
     const doclingToolsPath = this.config.doclingToolsPath || "docling-tools";
     return this.executeCommand(doclingToolsPath, args, options);
   }
@@ -241,10 +229,7 @@ export class CliUtils {
   /**
    * Execute a Docling CLI command asynchronously with progress monitoring
    */
-  async executeAsync(
-    args: string[],
-    options: CliAsyncOptions = {}
-  ): Promise<CliResult> {
+  async executeAsync(args: string[], options: CliAsyncOptions = {}): Promise<CliResult> {
     const doclingPath = this.config.doclingPath || "docling";
     return this.executeCommandAsync(doclingPath, args, options);
   }
@@ -252,10 +237,7 @@ export class CliUtils {
   /**
    * Execute a Docling Tools command asynchronously with progress monitoring
    */
-  async executeToolsAsync(
-    args: string[],
-    options: CliAsyncOptions = {}
-  ): Promise<CliResult> {
+  async executeToolsAsync(args: string[], options: CliAsyncOptions = {}): Promise<CliResult> {
     const doclingToolsPath = this.config.doclingToolsPath || "docling-tools";
     return this.executeCommandAsync(doclingToolsPath, args, options);
   }

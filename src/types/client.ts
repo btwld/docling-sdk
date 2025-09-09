@@ -19,10 +19,12 @@ import type {
   OcrEngine,
   OcrOptions,
   PdfBackend,
+  PresignedUrlConvertDocumentResponse,
   ProcessingPipeline,
   S3Source,
   TableMode,
   TaskStatusResponse,
+  TargetConversionResult,
 } from "./api";
 
 /**
@@ -53,6 +55,20 @@ export interface ProcessingError {
 }
 
 /**
+ * User-friendly S3 configuration (maps to OpenAPI S3 fields)
+ */
+export interface S3Config {
+  bucket: string;
+  key?: string; // For sources: specific file key; for targets: becomes key_prefix
+  region?: string; // Default: us-east-1
+  endpoint?: string; // Default: s3.amazonaws.com or s3.<region>.amazonaws.com
+  access_key_id?: string; // Falls back to AWS_ACCESS_KEY_ID env var
+  secret_access_key?: string; // Falls back to AWS_SECRET_ACCESS_KEY env var
+  session_token?: string;
+  verify_ssl?: boolean; // Default: true
+}
+
+/**
  * Result-based conversion result for better error handling
  */
 export type SafeConversionResult = Result<ConversionResult, ProcessingError>;
@@ -60,10 +76,7 @@ export type SafeConversionResult = Result<ConversionResult, ProcessingError>;
 /**
  * Result-based file conversion result
  */
-export type SafeFileConversionResult = Result<
-  ConversionFileResult,
-  ProcessingError
->;
+export type SafeFileConversionResult = Result<ConversionFileResult, ProcessingError>;
 
 /**
  * Progress tracking configuration
@@ -351,22 +364,20 @@ export interface DoclingAPI extends DoclingClientBase {
 
   /**
    * Convert documents from URLs or base64 sources (synchronous)
+   * Returns union type as this can be used for both standard and target operations
    */
-  convertSource(
-    request: ConvertDocumentsRequest
-  ): Promise<ConvertDocumentResponse>;
+  convertSource(request: ConvertDocumentsRequest): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
 
   /**
    * Convert uploaded files (synchronous)
+   * Returns union type as this can be used for both standard and target operations
    */
-  convertFile(params: FileUploadParams): Promise<ConvertDocumentResponse>;
+  convertFile(params: FileUploadParams): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
 
   /**
    * Convert documents from URLs or base64 sources (asynchronous)
    */
-  convertSourceAsync(
-    request: ConvertDocumentsRequest
-  ): Promise<AsyncConversionTask>;
+  convertSourceAsync(request: ConvertDocumentsRequest): Promise<AsyncConversionTask>;
 
   /**
    * Convert uploaded files (asynchronous)
@@ -374,14 +385,19 @@ export interface DoclingAPI extends DoclingClientBase {
   convertFileAsync(params: FileUploadParams): Promise<AsyncConversionTask>;
 
   /**
+   * Convert uploaded files (asynchronous) with ZIP output
+   */
+  convertFileAsyncToZip(params: FileUploadParams): Promise<AsyncConversionTask>;
+
+  /**
    * Poll task status
    */
-  pollTaskStatus(taskId: string): Promise<TaskStatusResponse>;
+  pollTaskStatus(taskId: string, waitSeconds?: number): Promise<TaskStatusResponse>;
 
   /**
    * Get task result
    */
-  getTaskResult(taskId: string): Promise<ConvertDocumentResponse>;
+  getTaskResult(taskId: string): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
 
   /**
    * Get task result as a ZIP file stream
@@ -391,6 +407,7 @@ export interface DoclingAPI extends DoclingClientBase {
   // Convenience conversion methods
   /**
    * Convert from URL with progress monitoring
+   * Returns standard document content
    */
   convertFromUrl(
     url: string,
@@ -401,10 +418,7 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert from file path
    */
-  convertFromFile(
-    filePath: string,
-    options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  convertFromFile(filePath: string, options?: ConversionOptions): Promise<ConversionResult>;
 
   /**
    * Convert from buffer
@@ -427,26 +441,17 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert from S3 source
    */
-  convertFromS3(
-    s3Config: {
-      bucket: string;
-      key: string;
-      region?: string;
-      access_key_id?: string;
-      secret_access_key?: string;
-      session_token?: string;
-    },
-    options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  convertFromS3(s3Config: S3Config, options?: ConversionOptions): Promise<ConversionResult>;
 
   /**
    * Convert with custom target (S3, PUT, etc.)
+   * Returns target-specific result (no document content)
    */
   convertWithTarget(
     sources: (HttpSource | FileSource | S3Source)[],
     target: ConversionTarget,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<TargetConversionResult>;
 }
 
 /**
@@ -524,8 +529,8 @@ export interface DoclingCLI extends DoclingClientBase {
 export type DoclingClient<T extends DoclingConfig> = T extends { api: unknown }
   ? DoclingAPI
   : T extends { cli: unknown }
-  ? DoclingCLI
-  : DoclingAPI;
+    ? DoclingCLI
+    : DoclingAPI;
 
 /**
  * Type helper for creating strongly typed Docling instances

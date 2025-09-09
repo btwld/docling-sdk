@@ -327,16 +327,13 @@ export const isDocItem = {
       "text",
     ].includes(item.label),
 
-  SectionHeaderItem: (item: DocItem): item is SectionHeaderItem =>
-    item.label === "section_header",
+  SectionHeaderItem: (item: DocItem): item is SectionHeaderItem => item.label === "section_header",
 
   ListItem: (item: DocItem): item is ListItem => item.label === "list_item",
 
-  TableItem: (item: DocItem): item is TableItem =>
-    ["document_index", "table"].includes(item.label),
+  TableItem: (item: DocItem): item is TableItem => ["document_index", "table"].includes(item.label),
 
-  PictureItem: (item: DocItem): item is PictureItem =>
-    ["chart", "picture"].includes(item.label),
+  PictureItem: (item: DocItem): item is PictureItem => ["chart", "picture"].includes(item.label),
 
   CodeItem: (item: DocItem): item is CodeItem => item.label === "code",
 };
@@ -345,42 +342,30 @@ export const isDocItem = {
  * Type guards for picture annotations.
  */
 export const isPictureAnnotation = {
-  Classification: (
-    annotation: PictureAnnotation
-  ): annotation is PictureClassificationData =>
+  Classification: (annotation: PictureAnnotation): annotation is PictureClassificationData =>
     annotation.kind === "classification",
 
-  Description: (
-    annotation: PictureAnnotation
-  ): annotation is PictureDescriptionData => annotation.kind === "description",
+  Description: (annotation: PictureAnnotation): annotation is PictureDescriptionData =>
+    annotation.kind === "description",
 
-  BarChart: (
-    annotation: PictureAnnotation
-  ): annotation is PictureBarChartData => annotation.kind === "bar_chart_data",
+  BarChart: (annotation: PictureAnnotation): annotation is PictureBarChartData =>
+    annotation.kind === "bar_chart_data",
 
-  LineChart: (
-    annotation: PictureAnnotation
-  ): annotation is PictureLineChartData =>
+  LineChart: (annotation: PictureAnnotation): annotation is PictureLineChartData =>
     annotation.kind === "line_chart_data",
 
-  PieChart: (
-    annotation: PictureAnnotation
-  ): annotation is PicturePieChartData => annotation.kind === "pie_chart_data",
+  PieChart: (annotation: PictureAnnotation): annotation is PicturePieChartData =>
+    annotation.kind === "pie_chart_data",
 
-  ScatterChart: (
-    annotation: PictureAnnotation
-  ): annotation is PictureScatterChartData =>
+  ScatterChart: (annotation: PictureAnnotation): annotation is PictureScatterChartData =>
     annotation.kind === "scatter_chart_data",
 
-  StackedBarChart: (
-    annotation: PictureAnnotation
-  ): annotation is PictureStackedBarChartData =>
+  StackedBarChart: (annotation: PictureAnnotation): annotation is PictureStackedBarChartData =>
     annotation.kind === "stacked_bar_chart_data",
 
   Misc: (annotation: PictureAnnotation): annotation is PictureMiscData =>
     annotation.kind === "misc",
 
-  Molecule: (
-    annotation: PictureAnnotation
-  ): annotation is PictureMoleculeData => annotation.kind === "molecule_data",
+  Molecule: (annotation: PictureAnnotation): annotation is PictureMoleculeData =>
+    annotation.kind === "molecule_data",
 };
