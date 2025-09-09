@@ -1175,7 +1175,7 @@ export class DoclingCLIClient implements DoclingCLI {
               processing_time: 0,
             }
           };
-        } else {
+        }
           return {
             success: false as const,
             error: {
@@ -1183,7 +1183,6 @@ export class DoclingCLIClient implements DoclingCLI {
               details: `Failed to process file: ${result.file}`,
             },
           };
-        }
       });
 
       return {

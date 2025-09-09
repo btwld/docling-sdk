@@ -609,10 +609,9 @@ export class DoclingAPIClient implements DoclingAPI {
           success: true as const,
           data: normalizedResult,
         };
-      } else {
+      }
         // Unexpected: got presigned URL response for standard conversion
         throw new Error("Unexpected presigned URL response for standard conversion");
-      }
     } catch (error) {
       return {
         success: false as const,
@@ -644,10 +643,9 @@ export class DoclingAPIClient implements DoclingAPI {
           success: true as const,
           data: result,
         };
-      } else {
+      }
         // Unexpected: got presigned URL response for standard conversion
         throw new Error("Unexpected presigned URL response for standard conversion");
-      }
     } catch (error) {
       return {
         success: false as const,
@@ -678,10 +676,9 @@ export class DoclingAPIClient implements DoclingAPI {
           success: true as const,
           data: result,
         };
-      } else {
+      }
         // Unexpected: got presigned URL response for standard conversion
         throw new Error("Unexpected presigned URL response for standard conversion");
-      }
     } catch (error) {
       return {
         success: false as const,
@@ -734,10 +731,9 @@ export class DoclingAPIClient implements DoclingAPI {
           success: true as const,
           data: normalizedResult,
         };
-      } else {
+      }
         // Unexpected: got presigned URL response for standard conversion
         throw new Error("Unexpected presigned URL response for standard conversion");
-      }
     } catch (error) {
       return {
         success: false as const,
@@ -788,11 +784,10 @@ export class DoclingAPIClient implements DoclingAPI {
           success: true as const,
           data: result,
         };
-      } else {
+      }
         // Unexpected: got document content for target operation
         // This shouldn't happen for target operations, but handle gracefully
         throw new Error("Unexpected document content in target conversion response");
-      }
     } catch (error) {
       return {
         success: false as const,
@@ -1772,9 +1767,8 @@ export class DoclingAPIClient implements DoclingAPI {
             data: finalResult,
             taskId: task.taskId,
           };
-        } else {
-          throw new Error("Unexpected presigned URL response for WebSocket conversion");
         }
+          throw new Error("Unexpected presigned URL response for WebSocket conversion");
       }
       throw new Error(`WebSocket conversion failed with status: ${finalStatus.task_status}`);
     } catch (error) {
@@ -1894,9 +1888,8 @@ export class DoclingAPIClient implements DoclingAPI {
             data: finalResult,
             taskId: task.taskId,
           };
-        } else {
-          throw new Error("Unexpected presigned URL response for WebSocket conversion");
         }
+          throw new Error("Unexpected presigned URL response for WebSocket conversion");
       }
       throw new Error(`WebSocket file conversion failed with status: ${finalStatus.task_status}`);
     } catch (error) {
@@ -2266,9 +2259,8 @@ export class DoclingAPIClient implements DoclingAPI {
             success: true as const,
             data: result,
           };
-        } else {
-          throw new Error("Unexpected presigned URL response for async conversion");
         }
+          throw new Error("Unexpected presigned URL response for async conversion");
       }
       throw new Error(`Task failed with status: ${status.task_status}`);
     } catch (error) {
