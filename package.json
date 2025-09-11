@@ -1,6 +1,6 @@
 {
   "name": "docling-sdk",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "TypeScript SDK for Docling - Bridge between Python Docling ecosystem and JavaScript/TypeScript. Supports both CLI and API modes with dual publishing.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
