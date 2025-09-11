@@ -61,22 +61,27 @@ const client = new Docling({ api: { baseUrl, timeout: 30000 } });
 
 const buf = await readFile("./examples/example.pdf");
 
-// JSON (inbody)
-const json = await client.convertFile({
+// JSON (inbody) with discriminated union
+const result = await client.convertFile({
   files: buf,
   filename: "example.pdf",
   to_formats: ["md"],
 });
-console.log(json.document?.md_content?.slice(0, 100));
+
+if (result.success === true) {
+  console.log(result.data.document.md_content?.slice(0, 100));
+} else {
+  console.error("Conversion failed:", result.error.message);
+}
 
 // ZIP (file response)
 const res = await client.convertToFile(buf, "example.pdf", {
   to_formats: ["md", "json"],
 });
-if (res.success && res.fileStream) {
+if (res.success === true && res.fileStream) {
   res.fileStream.pipe(createWriteStream("./output/result.zip"));
-} else {
-  console.error("ZIP conversion failed:", res.error?.message);
+} else if (res.success === false) {
+  console.error("ZIP conversion failed:", res.error.message);
 }
 ```
 
@@ -224,6 +229,77 @@ const customResult = await client.convert(buffer, "document.pdf", {
   },
 });
 ```
+
+## TypeScript Usage
+
+The Docling SDK provides full TypeScript support with discriminated unions for type-safe result handling.
+
+### Type-Safe Result Handling
+
+The SDK uses discriminated unions to provide **automatic type narrowing**. TypeScript automatically knows the correct types without requiring manual type guards:
+
+```typescript
+import { Docling } from "docling-sdk";
+
+const client = new Docling({ api: { baseUrl: "http://localhost:5001" } });
+const result = await client.convert(buffer, "document.pdf");
+
+// ✅ Recommended: Explicit comparison with automatic type narrowing
+if (result.success === true) {
+  // TypeScript automatically knows this is DocumentConversionSuccess
+  console.log("Document:", result.data.document.filename);
+  console.log("Status:", result.data.status);
+  console.log("Content:", result.data.document.md_content?.slice(0, 100));
+} else {
+  // TypeScript automatically knows this is ConversionFailure
+  console.error("Error:", result.error.message);
+  console.error("Details:", result.error.details);
+}
+
+// ✅ Pattern matching also works
+switch (result.success) {
+  case true:
+    console.log("Success:", result.data.document.filename);
+    break;
+  case false:
+    console.error("Failed:", result.error.message);
+    break;
+}
+```
+
+### Advanced: Type Guards (Optional)
+
+Type guards are available for advanced use cases, but **not required** for basic usage since TypeScript's discriminated unions work automatically:
+
+```typescript
+import {
+  isConversionSuccess,
+  hasDocumentContent,
+  isConversionFailure,
+} from "docling-sdk";
+
+// Optional: Type guards for advanced scenarios
+if (isConversionSuccess(result)) {
+  // Same as: result.success === true
+  console.log("Document:", result.data.document.filename);
+}
+
+// Optional: Check if API response has document content
+// (useful when working with raw API responses)
+if (hasDocumentContent(apiResponse)) {
+  console.log("Document:", apiResponse.document.filename);
+}
+
+// Optional: Type guard for failures
+if (isConversionFailure(result)) {
+  // Same as: result.success === false
+  console.error("Error:", result.error.message);
+}
+```
+
+> **💡 Tip**: For most applications, use the automatic discriminated unions (`result.success === true`) instead of type guards for cleaner, more readable code.
+
+See [examples/06-typescript-types.ts](./examples/06-typescript-types.ts) for comprehensive TypeScript usage examples.
 
 ## Documentation
 

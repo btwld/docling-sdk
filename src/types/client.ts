@@ -76,7 +76,10 @@ export type SafeConversionResult = Result<ConversionResult, ProcessingError>;
 /**
  * Result-based file conversion result
  */
-export type SafeFileConversionResult = Result<ConversionFileResult, ProcessingError>;
+export type SafeFileConversionResult = Result<
+  ConversionFileResult,
+  ProcessingError
+>;
 
 /**
  * Progress tracking configuration
@@ -366,18 +369,22 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert documents from URLs or base64 sources (synchronous)
    * Returns union type as this can be used for both standard and target operations
    */
-  convertSource(request: ConvertDocumentsRequest): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
+  convertSource(
+    request: ConvertDocumentsRequest
+  ): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
 
   /**
    * Convert uploaded files (synchronous)
-   * Returns union type as this can be used for both standard and target operations
+   * Returns discriminated union for consistent type safety
    */
-  convertFile(params: FileUploadParams): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
+  convertFile(params: FileUploadParams): Promise<ConversionResult>;
 
   /**
    * Convert documents from URLs or base64 sources (asynchronous)
    */
-  convertSourceAsync(request: ConvertDocumentsRequest): Promise<AsyncConversionTask>;
+  convertSourceAsync(
+    request: ConvertDocumentsRequest
+  ): Promise<AsyncConversionTask>;
 
   /**
    * Convert uploaded files (asynchronous)
@@ -392,12 +399,17 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Poll task status
    */
-  pollTaskStatus(taskId: string, waitSeconds?: number): Promise<TaskStatusResponse>;
+  pollTaskStatus(
+    taskId: string,
+    waitSeconds?: number
+  ): Promise<TaskStatusResponse>;
 
   /**
    * Get task result
    */
-  getTaskResult(taskId: string): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
+  getTaskResult(
+    taskId: string
+  ): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse>;
 
   /**
    * Get task result as a ZIP file stream
@@ -418,7 +430,10 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert from file path
    */
-  convertFromFile(filePath: string, options?: ConversionOptions): Promise<ConversionResult>;
+  convertFromFile(
+    filePath: string,
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
 
   /**
    * Convert from buffer
@@ -441,7 +456,10 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert from S3 source
    */
-  convertFromS3(s3Config: S3Config, options?: ConversionOptions): Promise<ConversionResult>;
+  convertFromS3(
+    s3Config: S3Config,
+    options?: ConversionOptions
+  ): Promise<ConversionResult>;
 
   /**
    * Convert with custom target (S3, PUT, etc.)
@@ -529,8 +547,8 @@ export interface DoclingCLI extends DoclingClientBase {
 export type DoclingClient<T extends DoclingConfig> = T extends { api: unknown }
   ? DoclingAPI
   : T extends { cli: unknown }
-    ? DoclingCLI
-    : DoclingAPI;
+  ? DoclingCLI
+  : DoclingAPI;
 
 /**
  * Type helper for creating strongly typed Docling instances

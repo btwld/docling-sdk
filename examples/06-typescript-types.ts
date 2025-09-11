@@ -9,6 +9,7 @@ import type {
   DoclingAPI,
   DoclingAPIClient,
   DoclingAPIClientType,
+  ConversionResult,
 } from "../src";
 
 // Example 1: Using the DoclingAPI interface for dependency injection
@@ -21,12 +22,12 @@ class DocumentProcessor {
       to_formats: ["md", "json"],
     });
 
-    if (result.success) {
+    if (result.success === true) {
       console.log("✅ Document processed successfully");
       return result.data;
     } else {
-      console.error("❌ Processing failed:", result.error?.message);
-      throw new Error(result.error?.message);
+      console.error("❌ Processing failed:", result.error.message);
+      throw new Error(result.error.message);
     }
   }
 
@@ -136,6 +137,84 @@ class DocumentService {
   }
 }
 
+// Example 6: Different approaches for handling ConversionResult discriminated union
+class TypeSafetyExamples {
+  constructor(private readonly client: DoclingAPI) {}
+
+  // Approach 1: Explicit comparison (recommended)
+  async explicitComparison(buffer: Buffer, filename: string) {
+    const result = await this.client.convert(buffer, filename);
+
+    if (result.success === true) {
+      // TypeScript automatically knows this is DocumentConversionSuccess
+      console.log("Document:", result.data.document.filename);
+      console.log("Status:", result.data.status);
+      return result.data;
+    } else {
+      // TypeScript automatically knows this is ConversionFailure
+      console.error("Error:", result.error.message);
+      throw new Error(result.error.message);
+    }
+  }
+
+  // Approach 2: Pattern matching style (also recommended)
+  async patternMatching(buffer: Buffer, filename: string) {
+    const result = await this.client.convert(buffer, filename);
+
+    switch (result.success) {
+      case true:
+        // TypeScript automatically knows this is DocumentConversionSuccess
+        console.log("Document:", result.data.document.filename);
+        return result.data;
+      case false:
+        // TypeScript automatically knows this is ConversionFailure
+        console.error("Error:", result.error.message);
+        throw new Error(result.error.message);
+      default:
+        // This should never happen with proper typing
+        const _exhaustive: never = result;
+        throw new Error("Unhandled result type");
+    }
+  }
+
+  // Approach 3: Separate if statements (alternative)
+  async separateChecks(buffer: Buffer, filename: string) {
+    const result = await this.client.convert(buffer, filename);
+
+    if (result.success === true) {
+      console.log("Success:", result.data.document.filename);
+      return result.data;
+    }
+
+    if (result.success === false) {
+      console.error("Failure:", result.error.message);
+      throw new Error(result.error.message);
+    }
+  }
+
+  // Approach 4: Utility function style
+  async utilityFunction(buffer: Buffer, filename: string) {
+    const result = await this.client.convert(buffer, filename);
+
+    return this.handleResult(result);
+  }
+
+  private handleResult(result: ConversionResult) {
+    if (result.success === true) {
+      return {
+        success: true as const,
+        document: result.data.document,
+        status: result.data.status,
+      };
+    } else {
+      return {
+        success: false as const,
+        error: result.error.message,
+      };
+    }
+  }
+}
+
 async function main() {
   const client = new Docling({
     api: {
@@ -157,6 +236,7 @@ export {
   DocumentProcessor,
   DocumentService,
   DoclingProcessorFactory,
+  TypeSafetyExamples,
   createProcessor,
   processWithClient,
   main,
