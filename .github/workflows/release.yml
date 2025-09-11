@@ -61,17 +61,24 @@ jobs:
               commits=$(git log --pretty=format:"%s")
             fi
 
-            # Check for releasable commits (skip version bump commits)
-            releasable_commits=$(echo "$commits" | grep -v "chore: bump version\|\\[skip ci\\]" || true)
+            # Check for releasable commits (skip version bump commits and minor changes)
+            releasable_commits=$(echo "$commits" | grep -v "chore: bump version\|\\[skip ci\\]\|^docs:\|^style:\|^test:" || true)
 
-            if [ -n "$releasable_commits" ]; then
+            # Only release if there are significant changes (fixes, features, refactors, etc.)
+            significant_commits=$(echo "$releasable_commits" | grep -E "^(feat|fix|refactor|perf|chore):" || true)
+
+            if [ -n "$significant_commits" ]; then
               echo "should-release=true" >> $GITHUB_OUTPUT
-              echo "✅ Found releasable changes since last release"
-              echo "📝 Changes:"
-              echo "$releasable_commits"
+              echo "✅ Found significant changes since last release"
+              echo "📝 Significant changes:"
+              echo "$significant_commits"
             else
               echo "should-release=false" >> $GITHUB_OUTPUT
-              echo "ℹ️ No releasable changes found - skipping release"
+              echo "ℹ️ No significant changes found - skipping release"
+              if [ -n "$releasable_commits" ]; then
+                echo "📝 Non-significant changes found:"
+                echo "$releasable_commits"
+              fi
             fi
           fi
 
@@ -136,18 +143,21 @@ jobs:
           fi
           echo "$commits"
 
-          # Determine bump type based on conventional commits
-          bump_type="patch"  # Default
+          # Determine bump type based on conventional commits (more conservative)
+          bump_type="patch"  # Default to patch for most changes
 
           if echo "$commits" | grep -q "BREAKING CHANGE\|!:"; then
             bump_type="major"
             echo "🔥 Found breaking changes → major bump"
-          elif echo "$commits" | grep -q "^feat"; then
+          elif echo "$commits" | grep -qE "^feat(\([^)]+\))?!:|^feat(\([^)]+\))?: .*(BREAKING|breaking)"; then
+            bump_type="major"
+            echo "🔥 Found breaking feature → major bump"
+          elif echo "$commits" | grep -qE "^feat(\([^)]+\))?: .*\b(new|add|introduce)\b.*\b(API|api|method|function|interface|endpoint)\b"; then
             bump_type="minor"
-            echo "✨ Found new features → minor bump"
-          elif echo "$commits" | grep -q "^fix\|^chore\|^docs\|^style\|^refactor\|^perf\|^test"; then
+            echo "✨ Found new API features → minor bump"
+          elif echo "$commits" | grep -q "^fix\|^chore\|^docs\|^style\|^refactor\|^perf\|^test\|^feat"; then
             bump_type="patch"
-            echo "🐛 Found fixes/chores → patch bump"
+            echo "🐛 Found fixes/improvements/features → patch bump (conservative)"
           else
             bump_type="patch"
             echo "📦 No conventional commits found → patch bump"
@@ -189,6 +199,89 @@ jobs:
 
           echo "✅ Version bumped from $current_version to $new_version"
 
+      - name: Update CHANGELOG.md
+        run: |
+          version="${{ steps.bump-version.outputs.new-version }}"
+
+          # Get commits since last tag for changelog
+          last_tag=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -n "$last_tag" ]; then
+            commits=$(git log $last_tag..HEAD~1 --pretty=format:"%s (%h)" --no-merges)
+          else
+            commits=$(git log HEAD~1 --pretty=format:"%s (%h)" --no-merges)
+          fi
+
+          # Generate changelog entry
+          changelog_entry="## [$version](https://github.com/btwld/docling-sdk/compare/$last_tag...v$version) ($(date +%Y-%m-%d))"
+
+          # Categorize commits for changelog
+          features=""
+          fixes=""
+          chores=""
+          others=""
+
+          echo "$commits" | while IFS= read -r commit; do
+            [ -z "$commit" ] && continue
+            if echo "$commit" | grep -qE "^feat(\([^)]+\))?:"; then
+              echo "- $commit" >> /tmp/cl_features.txt
+            elif echo "$commit" | grep -qE "^fix(\([^)]+\))?:"; then
+              echo "- $commit" >> /tmp/cl_fixes.txt
+            elif echo "$commit" | grep -qE "^(chore|docs|style|refactor|perf|test)(\([^)]+\))?:"; then
+              echo "- $commit" >> /tmp/cl_chores.txt
+            else
+              echo "- $commit" >> /tmp/cl_others.txt
+            fi
+          done
+
+          # Build changelog entry
+          echo "$changelog_entry" > /tmp/new_changelog.md
+          echo "" >> /tmp/new_changelog.md
+
+          if [ -f /tmp/cl_features.txt ]; then
+            echo "### ✨ Features" >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+            cat /tmp/cl_features.txt >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+          fi
+
+          if [ -f /tmp/cl_fixes.txt ]; then
+            echo "### 🐛 Bug Fixes" >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+            cat /tmp/cl_fixes.txt >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+          fi
+
+          if [ -f /tmp/cl_chores.txt ]; then
+            echo "### 🔧 Maintenance" >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+            cat /tmp/cl_chores.txt >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+          fi
+
+          if [ -f /tmp/cl_others.txt ]; then
+            echo "### 📦 Other Changes" >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+            cat /tmp/cl_others.txt >> /tmp/new_changelog.md
+            echo "" >> /tmp/new_changelog.md
+          fi
+
+          # Insert new entry at the top of CHANGELOG.md (after header)
+          head -n 4 CHANGELOG.md > /tmp/changelog_header.md
+          echo "" >> /tmp/changelog_header.md
+          cat /tmp/new_changelog.md >> /tmp/changelog_header.md
+          tail -n +5 CHANGELOG.md >> /tmp/changelog_header.md
+          mv /tmp/changelog_header.md CHANGELOG.md
+
+          # Clean up
+          rm -f /tmp/cl_*.txt /tmp/new_changelog.md
+
+          # Commit changelog update
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG.md for v$version [skip ci]"
+          git push origin main
+
+          echo "✅ Updated CHANGELOG.md for version $version"
+
       - name: Get current version
         id: get-version
         run: |
@@ -225,16 +318,100 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Generate Release Notes
+        id: release-notes
+        run: |
+          version="${{ steps.get-version.outputs.version }}"
+
+          # Get commits since last tag (excluding the version bump commit we just made)
+          last_tag=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -n "$last_tag" ]; then
+            commits=$(git log $last_tag..HEAD~1 --pretty=format:"%s (%h)" --no-merges)
+            echo "📝 Changes since $last_tag:"
+          else
+            commits=$(git log HEAD~1 --pretty=format:"%s (%h)" --no-merges)
+            echo "📝 All changes:"
+          fi
+
+          # Skip if no commits (shouldn't happen, but safety check)
+          if [ -z "$commits" ]; then
+            echo "## $version ($(date +%Y-%m-%d))" > release_notes.md
+            echo "release-notes-file=release_notes.md" >> $GITHUB_OUTPUT
+            echo "⚠️ No commits found for release notes"
+            exit 0
+          fi
+
+          # Categorize commits
+          features=""
+          fixes=""
+          chores=""
+          others=""
+
+          echo "$commits" | while IFS= read -r commit; do
+            # Skip empty lines
+            [ -z "$commit" ] && continue
+
+            if echo "$commit" | grep -qE "^feat(\([^)]+\))?:"; then
+              echo "FEATURE: $commit" >> /tmp/features.txt
+            elif echo "$commit" | grep -qE "^fix(\([^)]+\))?:"; then
+              echo "FIX: $commit" >> /tmp/fixes.txt
+            elif echo "$commit" | grep -qE "^(chore|docs|style|refactor|perf|test)(\([^)]+\))?:"; then
+              echo "CHORE: $commit" >> /tmp/chores.txt
+            else
+              echo "OTHER: $commit" >> /tmp/others.txt
+            fi
+          done
+
+          # Read categorized commits
+          features=$(cat /tmp/features.txt 2>/dev/null | sed 's/^FEATURE: /- /' || echo "")
+          fixes=$(cat /tmp/fixes.txt 2>/dev/null | sed 's/^FIX: /- /' || echo "")
+          chores=$(cat /tmp/chores.txt 2>/dev/null | sed 's/^CHORE: /- /' || echo "")
+          others=$(cat /tmp/others.txt 2>/dev/null | sed 's/^OTHER: /- /' || echo "")
+
+          # Build release notes
+          echo "## $version ($(date +%Y-%m-%d))" > release_notes.md
+
+          if [ -n "$features" ]; then
+            echo "" >> release_notes.md
+            echo "### ✨ Features" >> release_notes.md
+            echo "$features" >> release_notes.md
+          fi
+
+          if [ -n "$fixes" ]; then
+            echo "" >> release_notes.md
+            echo "### 🐛 Bug Fixes" >> release_notes.md
+            echo "$fixes" >> release_notes.md
+          fi
+
+          if [ -n "$chores" ]; then
+            echo "" >> release_notes.md
+            echo "### 🔧 Maintenance" >> release_notes.md
+            echo "$chores" >> release_notes.md
+          fi
+
+          if [ -n "$others" ]; then
+            echo "" >> release_notes.md
+            echo "### 📦 Other Changes" >> release_notes.md
+            echo "$others" >> release_notes.md
+          fi
+
+          # Clean up temp files
+          rm -f /tmp/features.txt /tmp/fixes.txt /tmp/chores.txt /tmp/others.txt
+
+          echo "release-notes-file=release_notes.md" >> $GITHUB_OUTPUT
+          echo "✅ Generated release notes:"
+          cat release_notes.md
+
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
         run: |
           version="${{ steps.get-version.outputs.version }}"
           tag_name="v$version"
 
-          # Create GitHub release with simple notes
+          # Create GitHub release with generated notes
           gh release create "$tag_name" \
             --title "Release $version" \
-            --notes "Release of docling-sdk@$version" \
+            --notes-file "${{ steps.release-notes.outputs.release-notes-file }}" \
             --latest
 
           echo "✅ Created GitHub release for $tag_name"

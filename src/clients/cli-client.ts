@@ -23,7 +23,7 @@ import { watch as chokidarWatch } from "chokidar";
 import type {
   ConversionFileResult,
   ConversionOptions,
-  ConversionResult,
+  ConvertDocumentResponse,
   OutputFormat,
 } from "../types/api";
 import type { CliConversionResult, CliConvertOptions } from "../types/cli";
@@ -347,7 +347,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
     return this.processFile(file, filename, this.mergeWithDefaults(options));
   }
@@ -359,7 +359,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.processFile(
       file,
       filename,
@@ -377,7 +377,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.processFile(
       file,
       filename,
@@ -395,7 +395,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.processFile(
       file,
       filename,
@@ -413,7 +413,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.processFile(file, filename, {
       ...this.config.defaultOptions,
       ...options,
@@ -427,7 +427,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.processFile(file, filename, this.mergeWithDefaults(options));
   }
 
@@ -441,18 +441,9 @@ export class DoclingCLIClient implements DoclingCLI {
   ): Promise<ConversionFileResult> {
     await this.ensureInitialized();
 
-    const result = await this.processFile(file, filename, options);
-
-    if (result.success === false) {
-      return {
-        success: false,
-        error: result.error,
-      };
-    }
-
-    const zipFilename = `${basename(filename, extname(filename))}.zip`;
-
     try {
+      await this.processFile(file, filename, options);
+      const zipFilename = `${basename(filename, extname(filename))}.zip`;
       const zipBuffer = await this.createZipFromOutputFiles(filename, options);
 
       return {
@@ -483,7 +474,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
     return this.processFile(file, filename, {
       ...this.config.defaultOptions,
@@ -499,7 +490,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
 
     this.progress.emit("async-start", { file: filename });
@@ -511,7 +502,7 @@ export class DoclingCLIClient implements DoclingCLI {
 
     this.progress.emit("async-complete", {
       file: filename,
-      success: result.success,
+      success: true,
     });
 
     return result;
@@ -524,7 +515,7 @@ export class DoclingCLIClient implements DoclingCLI {
     inputStream: NodeJS.ReadableStream,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
 
     try {
@@ -540,13 +531,11 @@ export class DoclingCLIClient implements DoclingCLI {
         ...options,
       });
     } catch (error) {
-      return {
-        success: false,
-        error: {
-          message: "Failed to process input stream",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Failed to process input stream: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -759,20 +748,10 @@ export class DoclingCLIClient implements DoclingCLI {
         }
       });
 
-      if (result.success === true) {
-        try {
-          await progressConfig.onComplete?.(result);
-        } catch (error) {
-          console.error("Error in completion callback:", error);
-        }
-      } else {
-        try {
-          await progressConfig.onError?.(
-            result.error || new Error("Conversion failed")
-          );
-        } catch (error) {
-          console.error("Error in error callback:", error);
-        }
+      try {
+        await progressConfig.onComplete?.(result);
+      } catch (error) {
+        console.error("Error in completion callback:", error);
       }
 
       return result;
@@ -817,7 +796,7 @@ export class DoclingCLIClient implements DoclingCLI {
   async convertFromUrl(
     url: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
 
     try {
@@ -838,13 +817,11 @@ export class DoclingCLIClient implements DoclingCLI {
 
       return result;
     } catch (error) {
-      return {
-        success: false,
-        error: {
-          message: `Failed to convert from URL: ${url}`,
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Failed to convert from URL: ${url}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -855,7 +832,7 @@ export class DoclingCLIClient implements DoclingCLI {
   async convertFromFile(
     filePath: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
 
     try {
@@ -865,13 +842,11 @@ export class DoclingCLIClient implements DoclingCLI {
         ...options,
       });
     } catch (error) {
-      return {
-        success: false,
-        error: {
-          message: `Failed to convert file: ${filePath}`,
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Failed to convert file: ${filePath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -883,7 +858,7 @@ export class DoclingCLIClient implements DoclingCLI {
     buffer: Buffer,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     await this.ensureInitialized();
 
     try {
@@ -892,13 +867,11 @@ export class DoclingCLIClient implements DoclingCLI {
         ...options,
       });
     } catch (error) {
-      return {
-        success: false,
-        error: {
-          message: `Failed to convert buffer for file: ${filename}`,
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Failed to convert buffer for file: ${filename}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -910,18 +883,16 @@ export class DoclingCLIClient implements DoclingCLI {
     base64String: string,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       const buffer = Buffer.from(base64String, "base64");
       return this.convertFromBuffer(buffer, filename, options);
     } catch (error) {
-      return {
-        success: false,
-        error: {
-          message: `Failed to convert base64 for file: ${filename}`,
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Failed to convert base64 for file: ${filename}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -943,7 +914,7 @@ export class DoclingCLIClient implements DoclingCLI {
     results: Array<{
       filename: string;
       success: boolean;
-      result?: ConversionResult;
+      result?: ConvertDocumentResponse;
       error?: string;
     }>;
   }> {
@@ -952,7 +923,7 @@ export class DoclingCLIClient implements DoclingCLI {
     const results: Array<{
       filename: string;
       success: boolean;
-      result?: ConversionResult;
+      result?: ConvertDocumentResponse;
       error?: string;
     }> = [];
 
@@ -1089,23 +1060,16 @@ export class DoclingCLIClient implements DoclingCLI {
       for (const chunk of chunks) {
         const chunkPromises = chunk.map(async (file) => {
           try {
-            const result = await this.convert(file, basename(file), options);
+            await this.convert(file, basename(file), options);
             this.progress.emit("file-completed", {
               file,
-              success: result.success,
+              success: true,
             });
 
-            const baseResult = {
-              file,
-              success: result.success,
-            };
-
-            if (result.success === true) {
-              return { ...baseResult, output: "Converted successfully" };
-            }
             return {
-              ...baseResult,
-              error: result.error?.message || "Unknown error",
+              file,
+              success: true,
+              output: "Converted successfully",
             };
           } catch (error) {
             this.progress.emit("file-completed", { file, success: false });
@@ -1123,21 +1087,16 @@ export class DoclingCLIClient implements DoclingCLI {
     } else {
       for (const file of files) {
         try {
-          const result = await this.convert(file, basename(file), options);
+          await this.convert(file, basename(file), options);
           this.progress.emit("file-completed", {
             file,
-            success: result.success,
+            success: true,
           });
 
           const batchResult = {
             file,
-            success: result.success,
-            ...(result.success === true && {
-              output: "Converted successfully",
-            }),
-            ...(result.success === false && {
-              error: result.error?.message || "Unknown error",
-            }),
+            success: true,
+            output: "Converted successfully",
           };
           results.push(batchResult);
         } catch (error) {
@@ -1172,7 +1131,7 @@ export class DoclingCLIClient implements DoclingCLI {
     options?: ConversionOptions
   ): Promise<{
     success: boolean;
-    results: ConversionResult[];
+    results: ConvertDocumentResponse[];
     totalFiles: number;
   }> {
     try {
@@ -1199,29 +1158,17 @@ export class DoclingCLIClient implements DoclingCLI {
       );
       const batchResult = await this.batch(filePaths, options);
 
-      const conversionResults: ConversionResult[] = batchResult.results.map(
-        (result) => {
-          if (result.success === true) {
-            // This should theoretically have data, but CLI batch processing doesn't provide it
-            // For now, create a minimal success response
-            return {
-              success: true as const,
-              data: {
-                document: { filename: result.file },
-                status: "success" as const,
-                processing_time: 0,
-              },
-            };
-          }
+      const conversionResults: ConvertDocumentResponse[] = batchResult.results
+        .filter((result) => result.success === true)
+        .map((result) => {
+          // CLI batch processing provides minimal data
+          // Create a minimal ConvertDocumentResponse
           return {
-            success: false as const,
-            error: {
-              message: result.error || "Unknown error",
-              details: `Failed to process file: ${result.file}`,
-            },
+            document: { filename: result.file },
+            status: "success" as const,
+            processing_time: 0,
           };
-        }
-      );
+        });
 
       return {
         success: batchResult.success,
@@ -2461,7 +2408,7 @@ export class DoclingCLIClient implements DoclingCLI {
   ): Promise<{
     filename: string;
     success: boolean;
-    result?: ConversionResult;
+    result?: ConvertDocumentResponse;
     error?: string;
   }> {
     if (!file) {
@@ -2489,7 +2436,7 @@ export class DoclingCLIClient implements DoclingCLI {
 
       return {
         filename: file.filename,
-        success: result.success,
+        success: true,
         result,
       };
     } catch (error) {
@@ -2507,7 +2454,7 @@ export class DoclingCLIClient implements DoclingCLI {
   private async convertSingleFileByType(
     file: { filename: string; buffer?: Buffer; filePath?: string },
     options: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     if (file.buffer) {
       return await this.convertFromBuffer(file.buffer, file.filename, options);
     }
@@ -2701,7 +2648,7 @@ export class DoclingCLIClient implements DoclingCLI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       await mkdir(this.outputDir, { recursive: true });
 
@@ -2776,15 +2723,12 @@ export class DoclingCLIClient implements DoclingCLI {
       const processingTime = Date.now() - this.progressState.startTime;
 
       return {
-        success: true,
-        data: {
-          document: {
-            filename,
-            ...allDocumentContent,
-          },
-          status: "success",
-          processing_time: processingTime,
+        document: {
+          filename,
+          ...allDocumentContent,
         },
+        status: "success",
+        processing_time: processingTime,
       };
     } catch (error) {
       this.progress.emit("processing-error", {
@@ -2792,13 +2736,11 @@ export class DoclingCLIClient implements DoclingCLI {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      return {
-        success: false,
-        error: {
-          message: `Docling CLI processing failed for ${filename}`,
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Docling CLI processing failed for ${filename}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 

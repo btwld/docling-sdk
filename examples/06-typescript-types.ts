@@ -137,79 +137,103 @@ class DocumentService {
   }
 }
 
-// Example 6: Different approaches for handling ConversionResult discriminated union
+// Example 6: Clean error handling with try/catch
 class TypeSafetyExamples {
   constructor(private readonly client: DoclingAPI) {}
 
-  // Approach 1: Explicit comparison (recommended)
-  async explicitComparison(buffer: Buffer, filename: string) {
-    const result = await this.client.convert(buffer, filename);
+  // Approach 1: Simple try/catch (recommended)
+  async simpleTryCatch(buffer: Buffer, filename: string) {
+    try {
+      const result = await this.client.convertFile({
+        files: buffer,
+        filename,
+        to_formats: ["md"],
+      });
 
-    if (result.success === true) {
-      // TypeScript automatically knows this is DocumentConversionSuccess
-      console.log("Document:", result.data.document.filename);
-      console.log("Status:", result.data.status);
-      return result.data;
-    } else {
-      // TypeScript automatically knows this is ConversionFailure
-      console.error("Error:", result.error.message);
-      throw new Error(result.error.message);
+      // Direct access to document - no nested data!
+      console.log("Document:", result.document.filename);
+      console.log("Status:", result.status);
+      return result;
+    } catch (error) {
+      console.error("Conversion failed:", error.message);
+      throw error;
     }
   }
 
-  // Approach 2: Pattern matching style (also recommended)
-  async patternMatching(buffer: Buffer, filename: string) {
-    const result = await this.client.convert(buffer, filename);
+  // Approach 2: With custom error handling
+  async customErrorHandling(buffer: Buffer, filename: string) {
+    try {
+      const result = await this.client.convertFile({
+        files: buffer,
+        filename,
+        to_formats: ["md", "json"],
+      });
 
-    switch (result.success) {
-      case true:
-        // TypeScript automatically knows this is DocumentConversionSuccess
-        console.log("Document:", result.data.document.filename);
-        return result.data;
-      case false:
-        // TypeScript automatically knows this is ConversionFailure
-        console.error("Error:", result.error.message);
-        throw new Error(result.error.message);
-      default:
-        // This should never happen with proper typing
-        const _exhaustive: never = result;
-        throw new Error("Unhandled result type");
+      // Direct access - clean and simple!
+      console.log("Document:", result.document.filename);
+      console.log("Markdown length:", result.document.md_content?.length || 0);
+      console.log("JSON available:", !!result.document.json_content);
+      return result;
+    } catch (error) {
+      // Custom error handling
+      if (error.message.includes("timeout")) {
+        console.error("Conversion timed out, retrying...");
+        // Could implement retry logic here
+      } else {
+        console.error("Conversion failed:", error.message);
+      }
+      throw error;
     }
   }
 
-  // Approach 3: Separate if statements (alternative)
-  async separateChecks(buffer: Buffer, filename: string) {
-    const result = await this.client.convert(buffer, filename);
+  // Approach 3: Multiple formats with validation
+  async multipleFormats(buffer: Buffer, filename: string) {
+    try {
+      const result = await this.client.convertFile({
+        files: buffer,
+        filename,
+        to_formats: ["md", "json", "html"],
+      });
 
-    if (result.success === true) {
-      console.log("Success:", result.data.document.filename);
-      return result.data;
-    }
+      // Validate what we got back
+      const formats = {
+        markdown: !!result.document.md_content,
+        json: !!result.document.json_content,
+        html: !!result.document.html_content,
+      };
 
-    if (result.success === false) {
-      console.error("Failure:", result.error.message);
-      throw new Error(result.error.message);
+      console.log("Available formats:", formats);
+      console.log("Document:", result.document.filename);
+
+      return { result, formats };
+    } catch (error) {
+      console.error("Multi-format conversion failed:", error.message);
+      throw error;
     }
   }
 
-  // Approach 4: Utility function style
-  async utilityFunction(buffer: Buffer, filename: string) {
-    const result = await this.client.convert(buffer, filename);
-
-    return this.handleResult(result);
+  // Approach 4: Utility wrapper
+  async utilityWrapper(buffer: Buffer, filename: string) {
+    return this.safeConvert(buffer, filename);
   }
 
-  private handleResult(result: ConversionResult) {
-    if (result.success === true) {
+  private async safeConvert(buffer: Buffer, filename: string) {
+    try {
+      const result = await this.client.convertFile({
+        files: buffer,
+        filename,
+        to_formats: ["md"],
+      });
+
       return {
         success: true as const,
-        document: result.data.document,
-        status: result.data.status,
+        document: result.document,
+        status: result.status,
       };
-    } else {
+    } catch (error) {
       return {
         success: false as const,
-        error: result.error.message,
+        error: error.message,
       };
     }
   }

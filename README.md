@@ -61,17 +61,17 @@ const client = new Docling({ api: { baseUrl, timeout: 30000 } });
 
 const buf = await readFile("./examples/example.pdf");
 
-// JSON (inbody) with discriminated union
-const result = await client.convertFile({
-  files: buf,
-  filename: "example.pdf",
-  to_formats: ["md"],
-});
+// JSON (inbody)
+try {
+  const result = await client.convertFile({
+    files: buf,
+    filename: "example.pdf",
+    to_formats: ["md"],
+  });
 
-if (result.success === true) {
-  console.log(result.data.document.md_content?.slice(0, 100));
-} else {
-  console.error("Conversion failed:", result.error.message);
+  console.log(result.document.md_content?.slice(0, 100));
+} catch (error) {
+  console.error("Conversion failed:", error.message);
 }
 
 // ZIP (file response)
@@ -232,72 +232,52 @@ const customResult = await client.convert(buffer, "document.pdf", {
 
 ## TypeScript Usage
 
-The Docling SDK provides full TypeScript support with discriminated unions for type-safe result handling.
+The Docling SDK provides full TypeScript support with clean, direct return types for type-safe result handling.
 
-### Type-Safe Result Handling
+### Clean API Pattern
 
-The SDK uses discriminated unions to provide **automatic type narrowing**. TypeScript automatically knows the correct types without requiring manual type guards:
+The SDK uses a clean API pattern where methods return documents directly and throw errors for failures. No discriminated unions needed:
 
 ```typescript
 import { Docling } from "docling-sdk";
 
 const client = new Docling({ api: { baseUrl: "http://localhost:5001" } });
-const result = await client.convert(buffer, "document.pdf");
 
-// ✅ Recommended: Explicit comparison with automatic type narrowing
-if (result.success === true) {
-  // TypeScript automatically knows this is DocumentConversionSuccess
-  console.log("Document:", result.data.document.filename);
-  console.log("Status:", result.data.status);
-  console.log("Content:", result.data.document.md_content?.slice(0, 100));
-} else {
-  // TypeScript automatically knows this is ConversionFailure
-  console.error("Error:", result.error.message);
-  console.error("Details:", result.error.details);
+try {
+  const result = await client.convert(buffer, "document.pdf");
+  // Direct access to document - clean and simple!
+  console.log(result.document.filename);
+  console.log(result.status);
+} catch (error) {
+  console.error("Conversion failed:", error.message);
 }
 
-// ✅ Pattern matching also works
-switch (result.success) {
-  case true:
-    console.log("Success:", result.data.document.filename);
-    break;
-  case false:
-    console.error("Failed:", result.error.message);
-    break;
-}
+// ✅ Clean API: Direct access to document properties
+console.log("Document:", result.document.filename);
+console.log("Status:", result.status);
+console.log("Content:", result.document.md_content?.slice(0, 100));
 ```
 
-### Advanced: Type Guards (Optional)
+### Advanced: Safe Methods (Optional)
 
-Type guards are available for advanced use cases, but **not required** for basic usage since TypeScript's discriminated unions work automatically:
+For scenarios where you prefer Result patterns over try/catch, safe methods are available:
 
 ```typescript
-import {
-  isConversionSuccess,
-  hasDocumentContent,
-  isConversionFailure,
-} from "docling-sdk";
+import { Docling } from "docling-sdk";
 
-// Optional: Type guards for advanced scenarios
-if (isConversionSuccess(result)) {
-  // Same as: result.success === true
+const client = new Docling({ api: { baseUrl: "http://localhost:5001" } });
+
+// Safe methods return Result<T, E> instead of throwing
+const result = await client.safeConvert(buffer, "document.pdf");
+
+if (result.success) {
   console.log("Document:", result.data.document.filename);
-}
-
-// Optional: Check if API response has document content
-// (useful when working with raw API responses)
-if (hasDocumentContent(apiResponse)) {
-  console.log("Document:", apiResponse.document.filename);
-}
-
-// Optional: Type guard for failures
-if (isConversionFailure(result)) {
-  // Same as: result.success === false
-  console.error("Error:", result.error.message);
+} else {
+  console.error("Conversion failed:", result.error.message);
 }
 ```
 
-> **💡 Tip**: For most applications, use the automatic discriminated unions (`result.success === true`) instead of type guards for cleaner, more readable code.
+> **💡 Tip**: For most applications, use the simple try/catch patterns shown above for cleaner, more readable code. Type guards are available for advanced async scenarios.
 
 See [examples/06-typescript-types.ts](./examples/06-typescript-types.ts) for comprehensive TypeScript usage examples.
 
@@ -314,32 +294,6 @@ See [examples/06-typescript-types.ts](./examples/06-typescript-types.ts) for com
 - TypeScript >= 4.9.0 (for development)
 - Python Docling installation (for CLI usage)
 - Docling Serve instance (for API usage)
-
-## Releases
-
-This repo uses github-actions[bot] for automated versioning, changelog, GitHub releases, and npm publish.
-
-### Automatic Releases
-
-- Triggers when `package.json` version changes on main branch
-- Validates, tests, builds, and publishes automatically
-- Creates GitHub releases with changelog
-
-### Manual Releases
-
-- Go to **Actions** → **Release** workflow → **"Run workflow"**
-- Choose patch/minor/major version bump
-- github-actions[bot] handles version bump, tagging, and publishing
-
-### Conventional Commits
-
-- PRs: use Conventional Commits in PR titles (feat:, fix:, feat!: for breaking)
-- Helps generate meaningful changelogs and release notes
-
-Setup required:
-
-- Add NPM_TOKEN secret in GitHub (Settings → Secrets → Actions)
-- The workflow uses GITHUB_TOKEN for GitHub releases and github-actions[bot] identity
 
 ## Development
 

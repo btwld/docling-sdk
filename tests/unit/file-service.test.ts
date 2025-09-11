@@ -93,13 +93,9 @@ describe("FileService", () => {
     const res = await service.convertSync(Buffer.from("pdf"), "example.pdf", {
       to_formats: ["md"],
     });
-    expect(res.success).toBe(true);
-    expect(
-      res.success &&
-        res.data &&
-        "document" in res.data &&
-        res.data.document.md_content
-    ).toBe("# md");
+    expect(res.document).toBeDefined();
+    expect(res.status).toBe("success");
+    expect(res.document.md_content).toBe("# md");
   });
 
   it("convertToFileAsync returns ZIP stream", async () => {

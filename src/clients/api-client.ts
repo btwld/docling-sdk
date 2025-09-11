@@ -8,7 +8,6 @@ import type {
   AsyncConversionTask,
   ConversionFileResult,
   ConversionOptions,
-  ConversionResult,
   ConversionTarget,
   ConvertDocumentResponse,
   ConvertDocumentsRequest,
@@ -140,13 +139,13 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
   async convert(
     file: Buffer | string,
     filename: string,
     options: ConversionOptions = {},
     progress?: ProgressConfig
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     if (progress) {
       return this.convertWithAutoProgress(file, filename, options, progress);
     }
@@ -160,7 +159,7 @@ export class DoclingAPIClient implements DoclingAPI {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.files.extractText(file, filename, {
       ...this.config.defaultOptions,
       ...options,
@@ -175,13 +174,13 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
   async toHtml(
     file: Buffer | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {},
     progress?: ProgressConfig
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     if (progress) {
       return this.convertWithAutoProgress(
         file,
@@ -204,13 +203,13 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
   async toMarkdown(
     file: Buffer | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {},
     progress?: ProgressConfig
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     if (progress) {
       return this.convertWithAutoProgress(
         file,
@@ -233,13 +232,13 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
   async convertDocument(
     file: Buffer | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     if (progress) {
       return this.convertWithAutoProgress(file, filename, options, progress);
     }
@@ -257,13 +256,13 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
   async process(
     file: Buffer | string,
     filename: string,
     options: ConversionOptions = {},
     progress?: ProgressConfig
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     if (progress) {
       return this.convertWithAutoProgress(file, filename, options, progress);
     }
@@ -277,19 +276,13 @@ export class DoclingAPIClient implements DoclingAPI {
   async convertToFile(
     file: Buffer | string,
     filename: string,
-    options: ConversionOptions,
-    progress?: ProgressConfig
+    options: ConversionOptions
   ): Promise<ConversionFileResult>;
   async convertToFile(
     file: Buffer | string,
     filename: string,
-    options: ConversionOptions,
-    progress?: ProgressConfig
+    options: ConversionOptions
   ): Promise<ConversionFileResult> {
-    if (progress) {
-      return this.convertWithAutoProgress(file, filename, options, progress);
-    }
-
     try {
       const mergedOptions = this.mergeWithDefaults(options);
 
@@ -381,9 +374,11 @@ export class DoclingAPIClient implements DoclingAPI {
 
   /**
    * Convert uploaded files (synchronous)
-   * Returns a discriminated union for consistent type safety
+   * Returns the document response directly, throws on error
    */
-  async convertFile(params: FileUploadParams): Promise<ConversionResult> {
+  async convertFile(
+    params: FileUploadParams
+  ): Promise<ConvertDocumentResponse> {
     try {
       const { files, filename, ...options } = params;
 
@@ -403,20 +398,12 @@ export class DoclingAPIClient implements DoclingAPI {
         { ...options, target_type: "inbody" }
       );
 
-      const normalizedResult = this.normalizeDocumentResponse(
+      return this.normalizeDocumentResponse(
         response.data,
         options.to_formats?.[0]
       );
-
-      return {
-        success: true as const,
-        data: normalizedResult,
-      };
     } catch (error) {
-      return {
-        success: false as const,
-        error: this.normalizeError(error),
-      };
+      throw this.normalizeError(error);
     }
   }
 
@@ -586,7 +573,7 @@ export class DoclingAPIClient implements DoclingAPI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.files.convertSync(file, filename, {
       ...this.config.defaultOptions,
       ...options,
@@ -600,7 +587,7 @@ export class DoclingAPIClient implements DoclingAPI {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.files.convertAsync(file, filename, {
       ...this.config.defaultOptions,
       ...options,
@@ -614,7 +601,7 @@ export class DoclingAPIClient implements DoclingAPI {
     inputStream: NodeJS.ReadableStream,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.files.convertStream(inputStream, filename, {
       ...this.config.defaultOptions,
       ...options,
@@ -649,42 +636,28 @@ export class DoclingAPIClient implements DoclingAPI {
     url: string,
     options: ConversionOptions = {},
     headers?: Record<string, string>
-  ): Promise<ConversionResult> {
-    try {
-      const httpSource: HttpSource = { kind: "http", url };
-      if (headers) {
-        httpSource.headers = headers;
-      }
-
-      const request: ConvertDocumentsRequest = {
-        options: this.mergeWithDefaults(options),
-        sources: [httpSource],
-      };
-
-      const result = await this.convertSource(request);
-
-      // Standard conversions should always return document content
-      if ("document" in result) {
-        // This is the expected ConvertDocumentResponse
-        const normalizedResult = this.normalizeDocumentResponse(
-          result,
-          options.to_formats?.[0]
-        );
-        return {
-          success: true as const,
-          data: normalizedResult,
-        };
-      }
-      // Unexpected: got presigned URL response for standard conversion
-      throw new Error(
-        "Unexpected presigned URL response for standard conversion"
-      );
-    } catch (error) {
-      return {
-        success: false as const,
-        error: this.normalizeError(error),
-      };
+  ): Promise<ConvertDocumentResponse> {
+    const httpSource: HttpSource = { kind: "http", url };
+    if (headers) {
+      httpSource.headers = headers;
     }
+
+    const request: ConvertDocumentsRequest = {
+      options: this.mergeWithDefaults(options),
+      sources: [httpSource],
+    };
+
+    const result = await this.convertSource(request);
+
+    // Standard conversions should always return document content
+    if ("document" in result) {
+      // This is the expected ConvertDocumentResponse
+      return this.normalizeDocumentResponse(result, options.to_formats?.[0]);
+    }
+    // Unexpected: got presigned URL response for standard conversion
+    throw new Error(
+      "Unexpected presigned URL response for standard conversion"
+    );
   }
 
   /**
@@ -693,21 +666,14 @@ export class DoclingAPIClient implements DoclingAPI {
   async convertFromFile(
     filePath: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
-    try {
-      const fileBuffer = await readFile(filePath);
+  ): Promise<ConvertDocumentResponse> {
+    const fileBuffer = await readFile(filePath);
 
-      return await this.convertFile({
-        files: fileBuffer,
-        ...this.config.defaultOptions,
-        ...options,
-      });
-    } catch (error) {
-      return {
-        success: false as const,
-        error: this.normalizeError(error),
-      };
-    }
+    return await this.convertFile({
+      files: fileBuffer,
+      ...this.config.defaultOptions,
+      ...options,
+    });
   }
 
   /**
@@ -717,7 +683,7 @@ export class DoclingAPIClient implements DoclingAPI {
     buffer: Buffer,
     _filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return await this.convertFile({
       files: buffer,
       ...this.config.defaultOptions,
@@ -732,16 +698,9 @@ export class DoclingAPIClient implements DoclingAPI {
     base64String: string,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
-    try {
-      const buffer = Buffer.from(base64String, "base64");
-      return this.convertFromBuffer(buffer, filename, options);
-    } catch (error) {
-      return {
-        success: false as const,
-        error: this.normalizeError(error),
-      };
-    }
+  ): Promise<ConvertDocumentResponse> {
+    const buffer = Buffer.from(base64String, "base64");
+    return this.convertFromBuffer(buffer, filename, options);
   }
 
   /**
@@ -750,39 +709,25 @@ export class DoclingAPIClient implements DoclingAPI {
   async convertFromS3(
     s3Config: S3Config,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
-    try {
-      const s3Source: S3Source = this.mapToApiS3Source(s3Config);
+  ): Promise<ConvertDocumentResponse> {
+    const s3Source: S3Source = this.mapToApiS3Source(s3Config);
 
-      const request: ConvertDocumentsRequest = {
-        options: this.mergeWithDefaults(options),
-        sources: [s3Source],
-      };
+    const request: ConvertDocumentsRequest = {
+      options: this.mergeWithDefaults(options),
+      sources: [s3Source],
+    };
 
-      const result = await this.convertSource(request);
+    const result = await this.convertSource(request);
 
-      // Standard conversions should always return document content
-      if ("document" in result) {
-        // This is the expected ConvertDocumentResponse
-        const normalizedResult = this.normalizeDocumentResponse(
-          result,
-          options.to_formats?.[0]
-        );
-        return {
-          success: true as const,
-          data: normalizedResult,
-        };
-      }
-      // Unexpected: got presigned URL response for standard conversion
-      throw new Error(
-        "Unexpected presigned URL response for standard conversion"
-      );
-    } catch (error) {
-      return {
-        success: false as const,
-        error: this.normalizeError(error),
-      };
+    // Standard conversions should always return document content
+    if ("document" in result) {
+      // This is the expected ConvertDocumentResponse
+      return this.normalizeDocumentResponse(result, options.to_formats?.[0]);
     }
+    // Unexpected: got presigned URL response for standard conversion
+    throw new Error(
+      "Unexpected presigned URL response for standard conversion"
+    );
   }
 
   /**
@@ -1150,7 +1095,7 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options: ConversionOptions = {},
     progressOverride?: ProgressConfig
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     const progressManager = progressOverride
       ? new ProgressTracker(this.http, this.config.baseUrl, progressOverride)
       : this.progressManager;
@@ -1180,11 +1125,7 @@ export class DoclingAPIClient implements DoclingAPI {
                 .then((result) => {
                   // Expect document content for standard conversions
                   if ("document" in result) {
-                    resolve({
-                      success: true as const,
-                      data: result,
-                      taskId: task.taskId,
-                    });
+                    resolve(result);
                   } else {
                     reject(
                       new Error(
@@ -1206,13 +1147,7 @@ export class DoclingAPIClient implements DoclingAPI {
       if (progressManager) {
         await progressManager.stopTracking();
       }
-      return {
-        success: false as const,
-        error: {
-          message: "Auto progress conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw this.normalizeError(error);
     }
   }
 
@@ -1514,7 +1449,7 @@ export class DoclingAPIClient implements DoclingAPI {
       totalBytes?: number;
       bytesPerSecond?: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     const inputType = file.stream
       ? "stream"
       : file.filePath
@@ -1527,7 +1462,10 @@ export class DoclingAPIClient implements DoclingAPI {
       throw new Error("Either buffer, filePath, or stream must be provided");
     }
 
-    const conversionHandlers = new Map([
+    const conversionHandlers = new Map<
+      string,
+      () => Promise<ConvertDocumentResponse>
+    >([
       [
         "stream",
         () => {
@@ -1688,7 +1626,7 @@ export class DoclingAPIClient implements DoclingAPI {
       uploadProgress?: number;
       conversionProgress?: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       if (onProgress) {
         onProgress({
@@ -1751,13 +1689,7 @@ export class DoclingAPIClient implements DoclingAPI {
         });
       }
 
-      return {
-        success: false as const,
-        error: {
-          message: "Conversion with progress failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw this.normalizeError(error);
     }
   }
 
@@ -1836,7 +1768,7 @@ export class DoclingAPIClient implements DoclingAPI {
       status: string;
       timestamp: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       if (!this.ws) {
         this.ws = new DoclingWebSocketClient({
@@ -1883,11 +1815,7 @@ export class DoclingAPIClient implements DoclingAPI {
         const finalResult = await this.getTaskResult(task.taskId);
         // WebSocket conversions should return document content
         if ("document" in finalResult) {
-          return {
-            success: true as const,
-            data: finalResult,
-            taskId: task.taskId,
-          };
+          return finalResult;
         }
         throw new Error(
           "Unexpected presigned URL response for WebSocket conversion"
@@ -1897,13 +1825,11 @@ export class DoclingAPIClient implements DoclingAPI {
         `WebSocket conversion failed with status: ${finalStatus.task_status}`
       );
     } catch (error) {
-      return {
-        success: false as const,
-        error: {
-          message: "WebSocket conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `WebSocket conversion failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -1925,7 +1851,7 @@ export class DoclingAPIClient implements DoclingAPI {
       uploadedBytes?: number;
       totalBytes?: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       const totalBytes = buffer.length;
 
@@ -2008,11 +1934,7 @@ export class DoclingAPIClient implements DoclingAPI {
         const finalResult = await this.getTaskResult(task.taskId);
         // WebSocket conversions should return document content
         if ("document" in finalResult) {
-          return {
-            success: true as const,
-            data: finalResult,
-            taskId: task.taskId,
-          };
+          return finalResult;
         }
         throw new Error(
           "Unexpected presigned URL response for WebSocket conversion"
@@ -2022,13 +1944,11 @@ export class DoclingAPIClient implements DoclingAPI {
         `WebSocket file conversion failed with status: ${finalStatus.task_status}`
       );
     } catch (error) {
-      return {
-        success: false as const,
-        error: {
-          message: "WebSocket file conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `WebSocket file conversion failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -2054,7 +1974,7 @@ export class DoclingAPIClient implements DoclingAPI {
       totalBytes?: number;
       bytesPerSecond?: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       const result = await this.http.uploadFileStream<ConvertDocumentResponse>(
         "/v1/convert/file",
@@ -2082,18 +2002,13 @@ export class DoclingAPIClient implements DoclingAPI {
         }
       );
 
-      return {
-        success: true as const,
-        data: result.data,
-      };
+      return result.data;
     } catch (error) {
-      return {
-        success: false as const,
-        error: {
-          message: "Pipeline file conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Pipeline file conversion failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -2114,7 +2029,7 @@ export class DoclingAPIClient implements DoclingAPI {
       totalBytes?: number;
       bytesPerSecond?: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       const streamData = {
         name: "files",
@@ -2147,18 +2062,13 @@ export class DoclingAPIClient implements DoclingAPI {
         }
       );
 
-      return {
-        success: true as const,
-        data: result.data,
-      };
+      return result.data;
     } catch (error) {
-      return {
-        success: false as const,
-        error: {
-          message: "Pipeline stream conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Pipeline stream conversion failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -2179,7 +2089,7 @@ export class DoclingAPIClient implements DoclingAPI {
       bytesPerSecond: number;
       stage: "preparing" | "uploading" | "processing" | "completed";
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       const streamOptions = {
         ...(onProgress && { onProgress }),
@@ -2198,18 +2108,13 @@ export class DoclingAPIClient implements DoclingAPI {
         streamOptions
       );
 
-      return {
-        success: true as const,
-        data: result.data,
-      };
+      return result.data;
     } catch (error) {
-      return {
-        success: false as const,
-        error: {
-          message: "Direct stream conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw new Error(
+        `Direct stream conversion failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -2241,7 +2146,7 @@ export class DoclingAPIClient implements DoclingAPI {
     results: Array<{
       filename: string;
       success: boolean;
-      result?: ConversionResult;
+      result?: ConvertDocumentResponse;
       error?: string;
     }>;
   }> {
@@ -2275,7 +2180,7 @@ export class DoclingAPIClient implements DoclingAPI {
           );
           return {
             filename: file.filename,
-            success: result.success,
+            success: true,
             result,
           };
         } catch (error) {
@@ -2364,7 +2269,7 @@ export class DoclingAPIClient implements DoclingAPI {
       uploadProgress?: number;
       conversionProgress?: number;
     }) => void
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       if (onProgress) {
         onProgress({
@@ -2409,10 +2314,7 @@ export class DoclingAPIClient implements DoclingAPI {
 
         // Async conversions should return document content
         if ("document" in result) {
-          return {
-            success: true as const,
-            data: result,
-          };
+          return result;
         }
         throw new Error(
           "Unexpected presigned URL response for async conversion"
@@ -2420,13 +2322,7 @@ export class DoclingAPIClient implements DoclingAPI {
       }
       throw new Error(`Task failed with status: ${status.task_status}`);
     } catch (error) {
-      return {
-        success: false as const,
-        error: {
-          message: "Async conversion failed",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
+      throw this.normalizeError(error);
     }
   }
 
