@@ -1102,12 +1102,11 @@ export class DoclingCLIClient implements DoclingCLI {
 
             if (result.success === true) {
               return { ...baseResult, output: "Converted successfully" };
-            } else {
-              return {
-                ...baseResult,
-                error: result.error?.message || "Unknown error",
-              };
             }
+            return {
+              ...baseResult,
+              error: result.error?.message || "Unknown error",
+            };
           } catch (error) {
             this.progress.emit("file-completed", { file, success: false });
             return {
@@ -1213,15 +1212,14 @@ export class DoclingCLIClient implements DoclingCLI {
                 processing_time: 0,
               },
             };
-          } else {
-            return {
-              success: false as const,
-              error: {
-                message: result.error || "Unknown error",
-                details: `Failed to process file: ${result.file}`,
-              },
-            };
           }
+          return {
+            success: false as const,
+            error: {
+              message: result.error || "Unknown error",
+              details: `Failed to process file: ${result.file}`,
+            },
+          };
         }
       );
 
