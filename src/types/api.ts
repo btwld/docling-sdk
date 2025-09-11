@@ -22,17 +22,32 @@ export type InputFormat =
 /**
  * Output formats supported by Docling
  */
-export type OutputFormat = "md" | "json" | "html" | "html_split_page" | "text" | "doctags";
+export type OutputFormat =
+  | "md"
+  | "json"
+  | "html"
+  | "html_split_page"
+  | "text"
+  | "doctags";
 
 /**
  * OCR engines available
  */
-export type OcrEngine = "easyocr" | "tesserocr" | "tesseract" | "rapidocr" | "ocrmac";
+export type OcrEngine =
+  | "easyocr"
+  | "tesserocr"
+  | "tesseract"
+  | "rapidocr"
+  | "ocrmac";
 
 /**
  * PDF backends available
  */
-export type PdfBackend = "pypdfium2" | "dlparse_v1" | "dlparse_v2" | "dlparse_v4";
+export type PdfBackend =
+  | "pypdfium2"
+  | "dlparse_v1"
+  | "dlparse_v2"
+  | "dlparse_v4";
 
 /**
  * Table extraction modes
@@ -166,7 +181,11 @@ export type TaskStatus = "pending" | "started" | "success" | "failure";
 /**
  * Conversion status
  */
-export type ConversionStatus = "success" | "partial_success" | "skipped" | "failure";
+export type ConversionStatus =
+  | "success"
+  | "partial_success"
+  | "skipped"
+  | "failure";
 
 /**
  * HTTP source for URL-based conversion
@@ -512,7 +531,9 @@ export type ConversionResult = DocumentConversionSuccess | ConversionFailure;
  * Target conversion result for operations with custom targets (S3, PUT, etc.)
  * TypeScript will know the appropriate response type based on the operation
  */
-export type TargetConversionResult = TargetConversionSuccess | ConversionFailure;
+export type TargetConversionResult =
+  | TargetConversionSuccess
+  | ConversionFailure;
 
 /**
  * Union of all possible conversion results (for internal API methods)
@@ -523,23 +544,29 @@ export type AnyConversionResult = ConversionResult | TargetConversionResult;
  * Type guard to check if standard conversion result is successful
  * When true, TypeScript knows result.data.document exists
  */
-export function isConversionSuccess(result: ConversionResult): result is DocumentConversionSuccess {
-  return result.success;
+export function isConversionSuccess(
+  result: ConversionResult
+): result is DocumentConversionSuccess {
+  return result.success === true;
 }
 
 /**
  * Type guard to check if target conversion result is successful
  * When true, TypeScript knows result.data has PresignedUrlConvertDocumentResponse structure
  */
-export function isTargetConversionSuccess(result: TargetConversionResult): result is TargetConversionSuccess {
-  return result.success;
+export function isTargetConversionSuccess(
+  result: TargetConversionResult
+): result is TargetConversionSuccess {
+  return result.success === true;
 }
 
 /**
  * Type guard to check if any conversion result is a failure
  */
-export function isConversionFailure(result: AnyConversionResult): result is ConversionFailure {
-  return !result.success;
+export function isConversionFailure(
+  result: AnyConversionResult
+): result is ConversionFailure {
+  return result.success === false;
 }
 
 /**
@@ -548,7 +575,7 @@ export function isConversionFailure(result: AnyConversionResult): result is Conv
 export function hasDocumentContent(
   data: ConvertDocumentResponse | PresignedUrlConvertDocumentResponse
 ): data is ConvertDocumentResponse {
-  return 'document' in data;
+  return "document" in data;
 }
 
 /**
@@ -557,7 +584,37 @@ export function hasDocumentContent(
 export function isPresignedUrlResponse(
   data: ConvertDocumentResponse | PresignedUrlConvertDocumentResponse
 ): data is PresignedUrlConvertDocumentResponse {
-  return !('document' in data);
+  return !("document" in data);
+}
+
+/**
+ * Helper function to create a successful conversion result
+ * Ensures proper literal type for success property
+ */
+export function createSuccessResult(
+  data: ConvertDocumentResponse,
+  taskId?: string
+): DocumentConversionSuccess {
+  return {
+    success: true as const,
+    data,
+    ...(taskId && { taskId }),
+  };
+}
+
+/**
+ * Helper function to create a failed conversion result
+ * Ensures proper literal type for success property
+ */
+export function createFailureResult(
+  error: ProcessingError,
+  taskId?: string
+): ConversionFailure {
+  return {
+    success: false as const,
+    error,
+    ...(taskId && { taskId }),
+  };
 }
 
 /**
@@ -584,7 +641,10 @@ export interface AsyncConversionTask {
   meta?: TaskMeta | undefined;
 
   on(event: "progress", listener: (status: TaskStatusResponse) => void): this;
-  on(event: "complete", listener: (result: ConvertDocumentResponse) => void): this;
+  on(
+    event: "complete",
+    listener: (result: ConvertDocumentResponse) => void
+  ): this;
   on(event: "error", listener: (error: ProcessingError) => void): this;
 
   poll(): Promise<TaskStatusResponse>;

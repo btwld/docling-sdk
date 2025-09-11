@@ -51,7 +51,7 @@ async function basicApiExample() {
       do_picture_description: true,
     });
 
-    if (result.success) {
+    if (result.success === true) {
       console.log("✅ Conversion successful!");
       console.log("📊 Document info:");
 

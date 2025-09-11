@@ -3,7 +3,16 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createReadStream, watch as fsWatch } from "node:fs";
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -123,21 +132,19 @@ export class DoclingCLIClient implements DoclingCLI {
   /**
    * Private static maps for format lookups (consistent with API client)
    */
-  private static readonly FORMAT_TO_EXTENSION_MAP: ReadonlyMap<string, string> = new Map<
-    string,
-    string
-  >([
-    ["text", "txt"],
-    ["html", "html"],
-    ["md", "md"],
-    ["json", "json"],
-    ["doctags", "doctags"],
-  ]);
+  private static readonly FORMAT_TO_EXTENSION_MAP: ReadonlyMap<string, string> =
+    new Map<string, string>([
+      ["text", "txt"],
+      ["html", "html"],
+      ["md", "md"],
+      ["json", "json"],
+      ["doctags", "doctags"],
+    ]);
 
-  private static readonly FORMAT_TO_CONTENT_KEY_MAP: ReadonlyMap<string, string> = new Map<
+  private static readonly FORMAT_TO_CONTENT_KEY_MAP: ReadonlyMap<
     string,
     string
-  >([
+  > = new Map<string, string>([
     ["text", "text_content"],
     ["html", "html_content"],
     ["md", "md_content"],
@@ -153,7 +160,11 @@ export class DoclingCLIClient implements DoclingCLI {
     baseDelay: 1000,
     maxDelay: 30000,
     backoffMultiplier: 2,
-    retryableErrors: [ErrorType.TRANSIENT, ErrorType.TIMEOUT, ErrorType.RESOURCE],
+    retryableErrors: [
+      ErrorType.TRANSIENT,
+      ErrorType.TIMEOUT,
+      ErrorType.RESOURCE,
+    ],
   };
 
   /**
@@ -288,7 +299,9 @@ export class DoclingCLIClient implements DoclingCLI {
       }
     }
 
-    throw new Error("Docling CLI not found. Please install Docling: pip install docling");
+    throw new Error(
+      "Docling CLI not found. Please install Docling: pip install docling"
+    );
   }
 
   /**
@@ -430,7 +443,7 @@ export class DoclingCLIClient implements DoclingCLI {
 
     const result = await this.processFile(file, filename, options);
 
-    if (!result.success) {
+    if (result.success === false) {
       return {
         success: false,
         error: result.error,
@@ -578,8 +591,15 @@ export class DoclingCLIClient implements DoclingCLI {
     returnAsZip = false
   ): Promise<CliConversionResult> {
     await this.ensureInitialized();
-    const streamContext = await this.createCliStreamContext(options, returnAsZip);
-    return await this.executeCliStreamRequest(streamContext, outputStream, returnAsZip);
+    const streamContext = await this.createCliStreamContext(
+      options,
+      returnAsZip
+    );
+    return await this.executeCliStreamRequest(
+      streamContext,
+      outputStream,
+      returnAsZip
+    );
   }
 
   /**
@@ -617,7 +637,9 @@ export class DoclingCLIClient implements DoclingCLI {
 
     try {
       const command = this.doclingCommand || "docling";
-      const commandParts = command.includes(" ") ? command.split(" ") : [command];
+      const commandParts = command.includes(" ")
+        ? command.split(" ")
+        : [command];
 
       const mainCommand = commandParts[0];
       if (!mainCommand) {
@@ -670,7 +692,10 @@ export class DoclingCLIClient implements DoclingCLI {
         onProgress({
           stage: processResult.exitCode === 0 ? "completed" : "failed",
           percentage: 100,
-          message: processResult.exitCode === 0 ? "Conversion completed" : "Conversion failed",
+          message:
+            processResult.exitCode === 0
+              ? "Conversion completed"
+              : "Conversion failed",
           memoryUsage: process.memoryUsage(),
         });
       }
@@ -734,7 +759,7 @@ export class DoclingCLIClient implements DoclingCLI {
         }
       });
 
-      if (result.success) {
+      if (result.success === true) {
         try {
           await progressConfig.onComplete?.(result);
         } catch (error) {
@@ -742,7 +767,9 @@ export class DoclingCLIClient implements DoclingCLI {
         }
       } else {
         try {
-          await progressConfig.onError?.(result.error || new Error("Conversion failed"));
+          await progressConfig.onError?.(
+            result.error || new Error("Conversion failed")
+          );
         } catch (error) {
           console.error("Error in error callback:", error);
         }
@@ -787,7 +814,10 @@ export class DoclingCLIClient implements DoclingCLI {
    * Convert from URL (CLI version of API convertFromUrl())
    * Downloads the file and converts it
    */
-  async convertFromUrl(url: string, options: ConversionOptions = {}): Promise<ConversionResult> {
+  async convertFromUrl(
+    url: string,
+    options: ConversionOptions = {}
+  ): Promise<ConversionResult> {
     await this.ensureInitialized();
 
     try {
@@ -1070,13 +1100,14 @@ export class DoclingCLIClient implements DoclingCLI {
               success: result.success,
             };
 
-            if (result.success) {
+            if (result.success === true) {
               return { ...baseResult, output: "Converted successfully" };
+            } else {
+              return {
+                ...baseResult,
+                error: result.error?.message || "Unknown error",
+              };
             }
-            return {
-              ...baseResult,
-              error: result.error?.message || "Unknown error",
-            };
           } catch (error) {
             this.progress.emit("file-completed", { file, success: false });
             return {
@@ -1102,8 +1133,10 @@ export class DoclingCLIClient implements DoclingCLI {
           const batchResult = {
             file,
             success: result.success,
-            ...(result.success && { output: "Converted successfully" }),
-            ...(!result.success && {
+            ...(result.success === true && {
+              output: "Converted successfully",
+            }),
+            ...(result.success === false && {
               error: result.error?.message || "Unknown error",
             }),
           };
@@ -1150,7 +1183,9 @@ export class DoclingCLIClient implements DoclingCLI {
       }
 
       const files = await readdir(directoryPath);
-      const pdfFiles = files.filter((file: string) => extname(file).toLowerCase() === ".pdf");
+      const pdfFiles = files.filter(
+        (file: string) => extname(file).toLowerCase() === ".pdf"
+      );
 
       if (pdfFiles.length === 0) {
         return {
@@ -1160,30 +1195,35 @@ export class DoclingCLIClient implements DoclingCLI {
         };
       }
 
-      const filePaths = pdfFiles.map((file: string) => join(directoryPath, file));
+      const filePaths = pdfFiles.map((file: string) =>
+        join(directoryPath, file)
+      );
       const batchResult = await this.batch(filePaths, options);
 
-      const conversionResults: ConversionResult[] = batchResult.results.map((result) => {
-        if (result.success) {
-          // This should theoretically have data, but CLI batch processing doesn't provide it
-          // For now, create a minimal success response
-          return {
-            success: true as const,
-            data: {
-              document: { filename: result.file },
-              status: "success" as const,
-              processing_time: 0,
-            }
-          };
+      const conversionResults: ConversionResult[] = batchResult.results.map(
+        (result) => {
+          if (result.success === true) {
+            // This should theoretically have data, but CLI batch processing doesn't provide it
+            // For now, create a minimal success response
+            return {
+              success: true as const,
+              data: {
+                document: { filename: result.file },
+                status: "success" as const,
+                processing_time: 0,
+              },
+            };
+          } else {
+            return {
+              success: false as const,
+              error: {
+                message: result.error || "Unknown error",
+                details: `Failed to process file: ${result.file}`,
+              },
+            };
+          }
         }
-          return {
-            success: false as const,
-            error: {
-              message: result.error || "Unknown error",
-              details: `Failed to process file: ${result.file}`,
-            },
-          };
-      });
+      );
 
       return {
         success: batchResult.success,
@@ -1227,7 +1267,14 @@ export class DoclingCLIClient implements DoclingCLI {
         }
 
         const ext = extname(file).toLowerCase();
-        const supportedExtensions = [".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".md"];
+        const supportedExtensions = [
+          ".pdf",
+          ".docx",
+          ".pptx",
+          ".xlsx",
+          ".txt",
+          ".md",
+        ];
 
         if (!supportedExtensions.includes(ext)) {
           invalid.push({ file, reason: `Unsupported file type: ${ext}` });
@@ -1283,13 +1330,17 @@ export class DoclingCLIClient implements DoclingCLI {
     for (const [key, validValues] of enumValidations) {
       const value = (options as Record<string, unknown>)[key];
       if (value !== undefined && !validValues.includes(value as string)) {
-        throw new Error(`Invalid ${key}: ${value}. Valid options: ${validValues.join(", ")}`);
+        throw new Error(
+          `Invalid ${key}: ${value}. Valid options: ${validValues.join(", ")}`
+        );
       }
     }
 
     if (options.to_formats) {
       const validFormats = ["text", "html", "md", "json", "doctags"];
-      const invalidFormats = options.to_formats.filter((f) => !validFormats.includes(f));
+      const invalidFormats = options.to_formats.filter(
+        (f) => !validFormats.includes(f)
+      );
       if (invalidFormats.length > 0) {
         throw new Error(
           `Invalid output formats: ${invalidFormats.join(
@@ -1313,7 +1364,9 @@ export class DoclingCLIClient implements DoclingCLI {
         "jpn",
         "kor",
       ];
-      const invalidLanguages = options.ocr_lang.filter((lang) => !validLanguages.includes(lang));
+      const invalidLanguages = options.ocr_lang.filter(
+        (lang) => !validLanguages.includes(lang)
+      );
       if (invalidLanguages.length > 0) {
         console.warn(
           `Warning: Unrecognized OCR languages: ${invalidLanguages.join(
@@ -1325,7 +1378,12 @@ export class DoclingCLIClient implements DoclingCLI {
 
     if (options.page_range && Array.isArray(options.page_range)) {
       const [start, end] = options.page_range;
-      if (typeof start !== "number" || typeof end !== "number" || start < 1 || end < start) {
+      if (
+        typeof start !== "number" ||
+        typeof end !== "number" ||
+        start < 1 ||
+        end < start
+      ) {
         throw new Error(
           `Invalid page range: [${start}, ${end}]. Start must be >= 1 and end must be >= start`
         );
@@ -1406,7 +1464,8 @@ export class DoclingCLIClient implements DoclingCLI {
   private calculateProgress(): number {
     if (this.progressState.totalFiles === 0) return 0;
 
-    const fileProgress = this.progressState.processedFiles / this.progressState.totalFiles;
+    const fileProgress =
+      this.progressState.processedFiles / this.progressState.totalFiles;
 
     const currentFileFormatProgress =
       this.progressState.totalFormats > 0
@@ -1414,7 +1473,9 @@ export class DoclingCLIClient implements DoclingCLI {
         : 0;
 
     const overallProgress =
-      (fileProgress + currentFileFormatProgress / this.progressState.totalFiles) * 100;
+      (fileProgress +
+        currentFileFormatProgress / this.progressState.totalFiles) *
+      100;
 
     return Math.min(Math.max(overallProgress, 0), 100);
   }
@@ -1423,28 +1484,36 @@ export class DoclingCLIClient implements DoclingCLI {
    * Calculate ETA based on performance history
    */
   private calculateETA(): number | undefined {
-    const { fileProcessingTimes, formatProcessingTimes } = this.performanceHistory;
+    const { fileProcessingTimes, formatProcessingTimes } =
+      this.performanceHistory;
 
-    if (fileProcessingTimes.length === 0 && formatProcessingTimes.length === 0) {
+    if (
+      fileProcessingTimes.length === 0 &&
+      formatProcessingTimes.length === 0
+    ) {
       return undefined;
     }
 
     const avgFileTime =
       fileProcessingTimes.length > 0
-        ? fileProcessingTimes.reduce((sum, time) => sum + time, 0) / fileProcessingTimes.length
+        ? fileProcessingTimes.reduce((sum, time) => sum + time, 0) /
+          fileProcessingTimes.length
         : 0;
 
     const avgFormatTime =
       formatProcessingTimes.length > 0
-        ? formatProcessingTimes.reduce((sum, time) => sum + time, 0) / formatProcessingTimes.length
+        ? formatProcessingTimes.reduce((sum, time) => sum + time, 0) /
+          formatProcessingTimes.length
         : 0;
 
-    const remainingFiles = this.progressState.totalFiles - this.progressState.processedFiles;
+    const remainingFiles =
+      this.progressState.totalFiles - this.progressState.processedFiles;
     const remainingFormatsInCurrentFile =
       this.progressState.totalFormats - this.progressState.processedFormats;
 
     const estimatedRemainingTime =
-      remainingFiles * avgFileTime + remainingFormatsInCurrentFile * avgFormatTime;
+      remainingFiles * avgFileTime +
+      remainingFormatsInCurrentFile * avgFormatTime;
 
     return estimatedRemainingTime;
   }
@@ -1468,14 +1537,18 @@ export class DoclingCLIClient implements DoclingCLI {
 
     const avgFileTime =
       this.performanceHistory.fileProcessingTimes.length > 0
-        ? this.performanceHistory.fileProcessingTimes.reduce((sum, time) => sum + time, 0) /
-          this.performanceHistory.fileProcessingTimes.length
+        ? this.performanceHistory.fileProcessingTimes.reduce(
+            (sum, time) => sum + time,
+            0
+          ) / this.performanceHistory.fileProcessingTimes.length
         : undefined;
 
     const avgFormatTime =
       this.performanceHistory.formatProcessingTimes.length > 0
-        ? this.performanceHistory.formatProcessingTimes.reduce((sum, time) => sum + time, 0) /
-          this.performanceHistory.formatProcessingTimes.length
+        ? this.performanceHistory.formatProcessingTimes.reduce(
+            (sum, time) => sum + time,
+            0
+          ) / this.performanceHistory.formatProcessingTimes.length
         : undefined;
 
     const progressEvent: ProgressEvent = {
@@ -1595,7 +1668,8 @@ export class DoclingCLIClient implements DoclingCLI {
 
     for (const [errorType, patterns] of errorPatterns) {
       const hasMatch = patterns.some(
-        (pattern) => errorMessage.includes(pattern) || stderrContent.includes(pattern)
+        (pattern) =>
+          errorMessage.includes(pattern) || stderrContent.includes(pattern)
       );
 
       if (hasMatch) {
@@ -1645,7 +1719,10 @@ export class DoclingCLIClient implements DoclingCLI {
     ]);
 
     const typeMultiplier = typeMultipliers.get(errorType) || 1;
-    const delay = Math.min(baseDelay * typeMultiplier * multiplier ** (attempt - 1), maxDelay);
+    const delay = Math.min(
+      baseDelay * typeMultiplier * multiplier ** (attempt - 1),
+      maxDelay
+    );
 
     const jitter = Math.random() * 0.1 * delay;
     return Math.floor(delay + jitter);
@@ -1684,7 +1761,8 @@ export class DoclingCLIClient implements DoclingCLI {
 
         return result;
       } catch (error) {
-        const currentError = error instanceof Error ? error : new Error(String(error));
+        const currentError =
+          error instanceof Error ? error : new Error(String(error));
         errors.push(currentError);
 
         const errorMessage = currentError.message;
@@ -1730,7 +1808,10 @@ export class DoclingCLIClient implements DoclingCLI {
   /**
    * Handle file change with debounce using timers/promises
    */
-  private async handleFileChangeWithDebounce(filePath: string, debounceMs: number): Promise<void> {
+  private async handleFileChangeWithDebounce(
+    filePath: string,
+    debounceMs: number
+  ): Promise<void> {
     const { setTimeout } = await import("node:timers/promises");
     await setTimeout(debounceMs);
     try {
@@ -1882,17 +1963,20 @@ export class DoclingCLIClient implements DoclingCLI {
       for (const lang of options.ocrLang) args.push("--ocr-lang", String(lang));
     }
 
-    if (options.pdfBackend) args.push("--pdf-backend", String(options.pdfBackend));
+    if (options.pdfBackend)
+      args.push("--pdf-backend", String(options.pdfBackend));
 
     if (options.tableMode) args.push("--table-mode", String(options.tableMode));
 
-    if (options.imageExportMode) args.push("--image-export-mode", String(options.imageExportMode));
+    if (options.imageExportMode)
+      args.push("--image-export-mode", String(options.imageExportMode));
     if (options.showLayout) args.push("--show-layout");
 
     if (options.enrichCode) args.push("--enrich-code");
     if (options.enrichFormula) args.push("--enrich-formula");
     if (options.enrichPictureClasses) args.push("--enrich-picture-classes");
-    if (options.enrichPictureDescriptions) args.push("--enrich-picture-description");
+    if (options.enrichPictureDescriptions)
+      args.push("--enrich-picture-description");
     if (typeof options.pictureDescriptionAreaThreshold === "number") {
       args.push(
         "--picture-description-area-threshold",
@@ -1909,7 +1993,8 @@ export class DoclingCLIClient implements DoclingCLI {
     }
     if (options.device) args.push("--device", String(options.device));
 
-    if (options.artifactsPath) args.push("--artifacts-path", String(options.artifactsPath));
+    if (options.artifactsPath)
+      args.push("--artifacts-path", String(options.artifactsPath));
     if (options.enableRemoteServices) args.push("--enable-remote-services");
     if (options.allowExternalPlugins) args.push("--allow-external-plugins");
     if (options.showExternalPlugins) args.push("--show-external-plugins");
@@ -1998,7 +2083,12 @@ export class DoclingCLIClient implements DoclingCLI {
   ): Promise<CliConversionResult> {
     try {
       const child = this.spawnCliProcess(context);
-      const result = await this.processCliStream(context, child, outputStream, returnAsZip);
+      const result = await this.processCliStream(
+        context,
+        child,
+        outputStream,
+        returnAsZip
+      );
 
       performance.mark(context.performanceMarkEnd);
       await this.cleanupTempDirectory(context.tempDir);
@@ -2024,12 +2114,16 @@ export class DoclingCLIClient implements DoclingCLI {
       throw new Error("No command specified in context");
     }
 
-    const child = spawn(mainCommand, [...context.commandParts.slice(1), ...context.args], {
-      cwd: this.config.outputDir || process.cwd(),
-      env: { ...process.env },
-      stdio: ["pipe", "pipe", "pipe"],
-      signal: context.abortController.signal,
-    }) as ChildProcess;
+    const child = spawn(
+      mainCommand,
+      [...context.commandParts.slice(1), ...context.args],
+      {
+        cwd: this.config.outputDir || process.cwd(),
+        env: { ...process.env },
+        stdio: ["pipe", "pipe", "pipe"],
+        signal: context.abortController.signal,
+      }
+    ) as ChildProcess;
 
     if (child.stdin) {
       child.stdin.end();
@@ -2053,7 +2147,10 @@ export class DoclingCLIClient implements DoclingCLI {
   ): Promise<CliConversionResult> {
     const streamHandlers = new Map([
       ["zip", () => this.processZipStream(context, child, outputStream)],
-      ["content", () => this.processContentStream(context, child, outputStream)],
+      [
+        "content",
+        () => this.processContentStream(context, child, outputStream),
+      ],
     ]);
 
     const handlerKey = returnAsZip ? "zip" : "content";
@@ -2142,7 +2239,10 @@ export class DoclingCLIClient implements DoclingCLI {
   /**
    * Create ZIP from temp directory and stream to output
    */
-  private async createZipFromTempDir(tempDir: string, outputStream: Writable): Promise<void> {
+  private async createZipFromTempDir(
+    tempDir: string,
+    outputStream: Writable
+  ): Promise<void> {
     try {
       const files = await readdir(tempDir, { recursive: true });
       const outputFiles = files.filter(
@@ -2169,7 +2269,9 @@ export class DoclingCLIClient implements DoclingCLI {
         outputStream.end();
       }
     } catch (error) {
-      outputStream.destroy(error instanceof Error ? error : new Error(String(error)));
+      outputStream.destroy(
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 
@@ -2183,7 +2285,9 @@ export class DoclingCLIClient implements DoclingCLI {
     outputStream: Writable,
     signal: AbortSignal
   ): Promise<void> {
-    const expectedExtensions = this.getExpectedExtensions(options.toFormats || ["md"]);
+    const expectedExtensions = this.getExpectedExtensions(
+      options.toFormats || ["md"]
+    );
     const streamedFiles = new Set<string>();
     let isCompleted = false;
 
@@ -2231,7 +2335,12 @@ export class DoclingCLIClient implements DoclingCLI {
         if (isCompleted) return;
 
         try {
-          await this.pollForFiles(tempDir, expectedExtensions, streamedFiles, outputStream);
+          await this.pollForFiles(
+            tempDir,
+            expectedExtensions,
+            streamedFiles,
+            outputStream
+          );
         } catch (error) {
           console.warn("Polling error:", error);
         }
@@ -2476,14 +2585,22 @@ export class DoclingCLIClient implements DoclingCLI {
       total: totalFormats,
     });
 
-    this.updateProgress("progress", `Processing format ${format}`, filename, format);
+    this.updateProgress(
+      "progress",
+      `Processing format ${format}`,
+      filename,
+      format
+    );
 
     const singleFormatOptions: ConversionOptions = {
       ...validatedOptions,
       to_formats: [format as OutputFormat],
     };
 
-    const command = await this.buildDoclingCommand(inputPath, singleFormatOptions);
+    const command = await this.buildDoclingCommand(
+      inputPath,
+      singleFormatOptions
+    );
 
     this.progress.emit("command-built", { command, format });
 
@@ -2495,13 +2612,22 @@ export class DoclingCLIClient implements DoclingCLI {
         file: filename,
       });
 
-      const parsedResult = await this.parseDoclingOutput(filename, inputPath, singleFormatOptions);
+      const parsedResult = await this.parseDoclingOutput(
+        filename,
+        inputPath,
+        singleFormatOptions
+      );
 
       Object.assign(allOutputFiles, parsedResult.outputFiles);
       Object.assign(allDocumentContent, parsedResult.data.document || {});
 
       this.recordFormatCompletion();
-      this.updateProgress("progress", `Completed format ${format}`, filename, format);
+      this.updateProgress(
+        "progress",
+        `Completed format ${format}`,
+        filename,
+        format
+      );
 
       this.progress.emit("format-processing-complete", {
         file: filename,
@@ -2513,7 +2639,10 @@ export class DoclingCLIClient implements DoclingCLI {
 
       return { format, success: true, outputFiles: parsedResult.outputFiles };
     } catch (formatError) {
-      const error = formatError instanceof Error ? formatError : new Error(String(formatError));
+      const error =
+        formatError instanceof Error
+          ? formatError
+          : new Error(String(formatError));
 
       const classification = this.classifyError(error);
 
@@ -2562,7 +2691,8 @@ export class DoclingCLIClient implements DoclingCLI {
    */
   private getExpectedExtensions(formats: string[]): string[] {
     return formats.map(
-      (format) => `.${DoclingCLIClient.FORMAT_TO_EXTENSION_MAP.get(format) || format}`
+      (format) =>
+        `.${DoclingCLIClient.FORMAT_TO_EXTENSION_MAP.get(format) || format}`
     );
   }
 
@@ -2612,7 +2742,9 @@ export class DoclingCLIClient implements DoclingCLI {
         )
       );
 
-      const successfulFormats = formatResults.filter((result) => result.success);
+      const successfulFormats = formatResults.filter(
+        (result) => result.success
+      );
       const failedFormats = formatResults.filter((result) => !result.success);
 
       if (failedFormats.length > 0) {
@@ -2695,7 +2827,10 @@ export class DoclingCLIClient implements DoclingCLI {
 
     ["pdf_backend", (backend: unknown) => ["--pdf-backend", String(backend)]],
 
-    ["do_ocr", (enable: unknown) => (enable !== false ? ["--ocr"] : ["--no-ocr"])],
+    [
+      "do_ocr",
+      (enable: unknown) => (enable !== false ? ["--ocr"] : ["--no-ocr"]),
+    ],
     ["ocr_engine", (engine: unknown) => ["--ocr-engine", String(engine)]],
     [
       "ocr_lang",
@@ -2716,11 +2851,23 @@ export class DoclingCLIClient implements DoclingCLI {
     ],
 
     ["table_mode", (mode: unknown) => ["--table-mode", String(mode)]],
-    ["do_table_structure", (enable: unknown) => (enable ? ["--do-table-structure"] : [])],
-    ["table_batch_size", (size: unknown) => ["--table-batch-size", String(size)]],
+    [
+      "do_table_structure",
+      (enable: unknown) => (enable ? ["--do-table-structure"] : []),
+    ],
+    [
+      "table_batch_size",
+      (size: unknown) => ["--table-batch-size", String(size)],
+    ],
 
-    ["do_code_enrichment", (enable: unknown) => (enable ? ["--enrich-code"] : [])],
-    ["do_formula_enrichment", (enable: unknown) => (enable ? ["--enrich-formula"] : [])],
+    [
+      "do_code_enrichment",
+      (enable: unknown) => (enable ? ["--enrich-code"] : []),
+    ],
+    [
+      "do_formula_enrichment",
+      (enable: unknown) => (enable ? ["--enrich-formula"] : []),
+    ],
     [
       "do_picture_classification",
       (enable: unknown) => (enable ? ["--enrich-picture-classes"] : []),
@@ -2731,34 +2878,71 @@ export class DoclingCLIClient implements DoclingCLI {
     ],
 
     ["pipeline", (pipeline: unknown) => ["--pipeline", String(pipeline)]],
-    ["processing_pipeline", (pipeline: unknown) => ["--pipeline", String(pipeline)]],
+    [
+      "processing_pipeline",
+      (pipeline: unknown) => ["--pipeline", String(pipeline)],
+    ],
     [
       "abort_on_error",
-      (enable: unknown) => (enable ? ["--abort-on-error"] : ["--no-abort-on-error"]),
+      (enable: unknown) =>
+        enable ? ["--abort-on-error"] : ["--no-abort-on-error"],
     ],
-    ["document_timeout", (timeout: unknown) => ["--document-timeout", String(timeout)]],
+    [
+      "document_timeout",
+      (timeout: unknown) => ["--document-timeout", String(timeout)],
+    ],
     ["num_threads", (threads: unknown) => ["--num-threads", String(threads)]],
     ["device", (device: unknown) => ["--device", String(device)]],
 
     ["artifacts_path", (path: unknown) => ["--artifacts-path", String(path)]],
-    ["allow_external_plugins", (enable: unknown) => (enable ? ["--allow-external-plugins"] : [])],
+    [
+      "allow_external_plugins",
+      (enable: unknown) => (enable ? ["--allow-external-plugins"] : []),
+    ],
 
     ["images_scale", (scale: unknown) => ["--images-scale", String(scale)]],
-    ["generate_page_images", (enable: unknown) => (enable ? ["--generate-page-images"] : [])],
-    ["generate_picture_images", (enable: unknown) => (enable ? ["--generate-picture-images"] : [])],
-    ["image_export_mode", (mode: unknown) => ["--image-export-mode", String(mode)]],
+    [
+      "generate_page_images",
+      (enable: unknown) => (enable ? ["--generate-page-images"] : []),
+    ],
+    [
+      "generate_picture_images",
+      (enable: unknown) => (enable ? ["--generate-picture-images"] : []),
+    ],
+    [
+      "image_export_mode",
+      (mode: unknown) => ["--image-export-mode", String(mode)],
+    ],
 
-    ["debug_visualize_cells", (enable: unknown) => (enable ? ["--debug-visualize-cells"] : [])],
-    ["debug_visualize_ocr", (enable: unknown) => (enable ? ["--debug-visualize-ocr"] : [])],
-    ["debug_visualize_layout", (enable: unknown) => (enable ? ["--debug-visualize-layout"] : [])],
-    ["debug_visualize_tables", (enable: unknown) => (enable ? ["--debug-visualize-tables"] : [])],
+    [
+      "debug_visualize_cells",
+      (enable: unknown) => (enable ? ["--debug-visualize-cells"] : []),
+    ],
+    [
+      "debug_visualize_ocr",
+      (enable: unknown) => (enable ? ["--debug-visualize-ocr"] : []),
+    ],
+    [
+      "debug_visualize_layout",
+      (enable: unknown) => (enable ? ["--debug-visualize-layout"] : []),
+    ],
+    [
+      "debug_visualize_tables",
+      (enable: unknown) => (enable ? ["--debug-visualize-tables"] : []),
+    ],
 
     ["export_json", (enable: unknown) => (enable ? ["--export-json"] : [])],
     ["export_html", (enable: unknown) => (enable ? ["--export-html"] : [])],
-    ["export_html_split_page", (enable: unknown) => (enable ? ["--export-html-split-page"] : [])],
+    [
+      "export_html_split_page",
+      (enable: unknown) => (enable ? ["--export-html-split-page"] : []),
+    ],
     ["export_md", (enable: unknown) => (enable ? ["--export-md"] : [])],
     ["export_txt", (enable: unknown) => (enable ? ["--export-txt"] : [])],
-    ["export_doctags", (enable: unknown) => (enable ? ["--export-doctags"] : [])],
+    [
+      "export_doctags",
+      (enable: unknown) => (enable ? ["--export-doctags"] : []),
+    ],
     ["show_layout", (enable: unknown) => (enable ? ["--show-layout"] : [])],
 
     ["headers", (headers: unknown) => ["--headers", String(headers)]],
@@ -2775,8 +2959,14 @@ export class DoclingCLIClient implements DoclingCLI {
     ["pages", (pages: unknown) => ["--pages", String(pages)]],
 
     ["ocr_batch_size", (size: unknown) => ["--ocr-batch-size", String(size)]],
-    ["layout_batch_size", (size: unknown) => ["--layout-batch-size", String(size)]],
-    ["batch_timeout_seconds", (timeout: unknown) => ["--batch-timeout", String(timeout)]],
+    [
+      "layout_batch_size",
+      (size: unknown) => ["--layout-batch-size", String(size)],
+    ],
+    [
+      "batch_timeout_seconds",
+      (timeout: unknown) => ["--batch-timeout", String(timeout)],
+    ],
     ["queue_max_size", (size: unknown) => ["--queue-max-size", String(size)]],
 
     [
@@ -2790,8 +2980,14 @@ export class DoclingCLIClient implements DoclingCLI {
     ],
     ["quiet", (enable: unknown) => (enable ? ["--quiet"] : [])],
 
-    ["create_legacy_output", (enable: unknown) => (enable ? ["--create-legacy-output"] : [])],
-    ["enable_remote_services", (enable: unknown) => (enable ? ["--enable-remote-services"] : [])],
+    [
+      "create_legacy_output",
+      (enable: unknown) => (enable ? ["--create-legacy-output"] : []),
+    ],
+    [
+      "enable_remote_services",
+      (enable: unknown) => (enable ? ["--enable-remote-services"] : []),
+    ],
   ]);
 
   /**
@@ -2858,7 +3054,9 @@ export class DoclingCLIClient implements DoclingCLI {
         if (code === 0) {
           resolve(result);
         } else {
-          reject(new Error(`Docling CLI exited with code ${code}. stderr: ${stderr}`));
+          reject(
+            new Error(`Docling CLI exited with code ${code}. stderr: ${stderr}`)
+          );
         }
       });
 
@@ -2895,12 +3093,17 @@ export class DoclingCLIClient implements DoclingCLI {
 
     for (const format of formats) {
       try {
-        const fileExtension = DoclingCLIClient.FORMAT_TO_EXTENSION_MAP.get(format) || format;
+        const fileExtension =
+          DoclingCLIClient.FORMAT_TO_EXTENSION_MAP.get(format) || format;
         const contentKey =
-          DoclingCLIClient.FORMAT_TO_CONTENT_KEY_MAP.get(format) || `${format}_content`;
+          DoclingCLIClient.FORMAT_TO_CONTENT_KEY_MAP.get(format) ||
+          `${format}_content`;
 
         const inputBaseName = basename(inputPath, extname(inputPath));
-        const outputPath = join(this.outputDir, `${inputBaseName}.${fileExtension}`);
+        const outputPath = join(
+          this.outputDir,
+          `${inputBaseName}.${fileExtension}`
+        );
 
         try {
           const content = await readFile(outputPath, "utf-8");
@@ -3013,7 +3216,8 @@ export class DoclingCLIClient implements DoclingCLI {
       const formats = options?.to_formats || ["text"];
 
       for (const format of formats) {
-        const fileExtension = DoclingCLIClient.FORMAT_TO_EXTENSION_MAP.get(format) || format;
+        const fileExtension =
+          DoclingCLIClient.FORMAT_TO_EXTENSION_MAP.get(format) || format;
 
         const outputPath = join(this.outputDir, `${baseName}.${fileExtension}`);
 
