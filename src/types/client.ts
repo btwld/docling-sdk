@@ -7,7 +7,6 @@ import type {
   AsyncConversionTask,
   ConversionFileResult,
   ConversionOptions,
-  ConversionResult,
   ConversionTarget,
   ConvertDocumentResponse,
   ConvertDocumentsRequest,
@@ -71,7 +70,10 @@ export interface S3Config {
 /**
  * Result-based conversion result for better error handling
  */
-export type SafeConversionResult = Result<ConversionResult, ProcessingError>;
+export type SafeConversionResult = Result<
+  ConvertDocumentResponse,
+  ProcessingError
+>;
 
 /**
  * Result-based file conversion result
@@ -187,7 +189,7 @@ export interface DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Extract text content from document
@@ -196,7 +198,7 @@ export interface DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert document to HTML format
@@ -205,7 +207,7 @@ export interface DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert document to Markdown format
@@ -214,7 +216,7 @@ export interface DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert document to multiple formats
@@ -223,7 +225,7 @@ export interface DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Process document with advanced options
@@ -232,7 +234,7 @@ export interface DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert document and return as downloadable files
@@ -279,7 +281,7 @@ export interface DoclingAPI extends DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert using ASYNC endpoint (advanced workflows)
@@ -288,7 +290,7 @@ export interface DoclingAPI extends DoclingClientBase {
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert input stream (perfect for NestJS/Express)
@@ -297,7 +299,7 @@ export interface DoclingAPI extends DoclingClientBase {
     inputStream: NodeJS.ReadableStream,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert input stream to ZIP file
@@ -317,35 +319,35 @@ export interface DoclingAPI extends DoclingClientBase {
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   toHtml(
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   toMarkdown(
     file: Buffer | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   convertDocument(
     file: Buffer | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   process(
     file: Buffer | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   convertToFile(
     file: Buffer | string,
@@ -375,9 +377,9 @@ export interface DoclingAPI extends DoclingClientBase {
 
   /**
    * Convert uploaded files (synchronous)
-   * Returns discriminated union for consistent type safety
+   * Returns the document response directly, throws on error
    */
-  convertFile(params: FileUploadParams): Promise<ConversionResult>;
+  convertFile(params: FileUploadParams): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert documents from URLs or base64 sources (asynchronous)
@@ -425,7 +427,7 @@ export interface DoclingAPI extends DoclingClientBase {
     url: string,
     options?: ConversionOptions,
     headers?: Record<string, string>
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert from file path
@@ -433,7 +435,7 @@ export interface DoclingAPI extends DoclingClientBase {
   convertFromFile(
     filePath: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert from buffer
@@ -442,7 +444,7 @@ export interface DoclingAPI extends DoclingClientBase {
     buffer: Buffer,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert from base64 string
@@ -451,7 +453,7 @@ export interface DoclingAPI extends DoclingClientBase {
     base64String: string,
     filename: string,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert from S3 source
@@ -459,7 +461,7 @@ export interface DoclingAPI extends DoclingClientBase {
   convertFromS3(
     s3Config: S3Config,
     options?: ConversionOptions
-  ): Promise<ConversionResult>;
+  ): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert with custom target (S3, PUT, etc.)
@@ -518,7 +520,7 @@ export interface DoclingCLI extends DoclingClientBase {
     options?: ConversionOptions
   ): Promise<{
     success: boolean;
-    results: ConversionResult[];
+    results: ConvertDocumentResponse[];
     totalFiles: number;
   }>;
 

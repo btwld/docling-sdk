@@ -2,7 +2,6 @@ import type { HttpClient } from "../api/http";
 import type {
   ConversionFileResult,
   ConversionOptions,
-  ConversionResult,
   ConvertDocumentResponse,
   ProcessingError,
   TaskStatusResponse,
@@ -30,7 +29,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.convertSync(file, filename, options);
   }
 
@@ -42,7 +41,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.convert(file, filename, {
       ...options,
       to_formats: ["text"],
@@ -57,7 +56,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.convert(file, filename, {
       ...options,
       to_formats: ["html"],
@@ -72,7 +71,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.convert(file, filename, {
       ...options,
       to_formats: ["md"],
@@ -87,7 +86,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.convert(file, filename, options);
   }
 
@@ -99,7 +98,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     return this.convert(file, filename, {
       pipeline: "vlm",
       ...options,
@@ -115,7 +114,7 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
+  ): Promise<ConvertDocumentResponse> {
     try {
       const fileBuffer = await this.ensureBuffer(file);
 
@@ -156,34 +155,24 @@ export class FileService {
               `/v1/result/${taskId}`
             );
 
-          return {
-            success: true,
-            data: resultResponse.data,
-          };
+          return resultResponse.data;
         }
         if (status === "failure") {
-          return {
-            success: false,
-            error: {
-              message: `Async task failed with status: ${status}`,
-              details: { task_id: taskId, status: status },
-            },
-          };
+          throw new Error(
+            `Async task failed with status: ${status}. Task ID: ${taskId}`
+          );
         }
       }
 
-      return {
-        success: false,
-        error: {
-          message: `Async task timed out after ${maxAttempts * 2} seconds`,
-          details: { task_id: taskId, attempts },
-        },
-      };
+      throw new Error(
+        `Async task timed out after ${
+          maxAttempts * 2
+        } seconds. Task ID: ${taskId}, Attempts: ${attempts}`
+      );
     } catch (error) {
-      return {
-        success: false,
-        error: this.createError(error, "Async conversion failed"),
-      };
+      throw error instanceof Error
+        ? error
+        : new Error("Async conversion failed");
     }
   }
 
@@ -222,34 +211,24 @@ export class FileService {
     file: Buffer | string,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
-    try {
-      const fileBuffer = await this.ensureBuffer(file);
+  ): Promise<ConvertDocumentResponse> {
+    const fileBuffer = await this.ensureBuffer(file);
 
-      const response = await this.http.streamUpload<ConvertDocumentResponse>(
-        "/v1/convert/file",
-        [
-          {
-            name: "files",
-            data: fileBuffer,
-            filename,
-            contentType: this.getContentType(filename),
-            size: fileBuffer.length,
-          },
-        ],
-        this.buildFormFields(options, "inbody")
-      );
+    const response = await this.http.streamUpload<ConvertDocumentResponse>(
+      "/v1/convert/file",
+      [
+        {
+          name: "files",
+          data: fileBuffer,
+          filename,
+          contentType: this.getContentType(filename),
+          size: fileBuffer.length,
+        },
+      ],
+      this.buildFormFields(options, "inbody")
+    );
 
-      return {
-        success: true,
-        data: response.data,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: this.createError(error, "Sync conversion failed"),
-      };
-    }
+    return response.data;
   }
 
   /**
@@ -360,41 +339,25 @@ export class FileService {
     inputStream: NodeJS.ReadableStream,
     filename: string,
     options: ConversionOptions = {}
-  ): Promise<ConversionResult> {
-    try {
-      const response = await this.http.streamPassthrough(
-        "/v1/convert/file",
-        inputStream,
-        filename,
-        this.getContentType(filename),
-        this.buildFormFields(options, "inbody"),
-        { accept: "json" }
-      );
+  ): Promise<ConvertDocumentResponse> {
+    const response = await this.http.streamPassthrough(
+      "/v1/convert/file",
+      inputStream,
+      filename,
+      this.getContentType(filename),
+      this.buildFormFields(options, "inbody"),
+      { accept: "json" }
+    );
 
-      if (
-        response.data &&
-        typeof response.data === "object" &&
-        "document" in response.data
-      ) {
-        return {
-          success: true,
-          data: response.data as ConvertDocumentResponse,
-        };
-      }
-
-      return {
-        success: false,
-        error: {
-          message: "No data received from stream conversion",
-          details: response,
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: this.createError(error, "Stream to JSON conversion failed"),
-      };
+    if (
+      response.data &&
+      typeof response.data === "object" &&
+      "document" in response.data
+    ) {
+      return response.data as ConvertDocumentResponse;
     }
+
+    throw new Error("No data received from stream conversion");
   }
 
   /**
