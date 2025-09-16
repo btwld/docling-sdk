@@ -1269,7 +1269,7 @@ export class DoclingCLIClient implements DoclingCLI {
       ["device", ["auto", "cpu", "cuda", "mps"]],
       ["ocr_engine", ["easyocr", "tesseract", "rapidocr"]],
       ["pipeline", ["standard", "vlm", "asr"]],
-      ["image_export_mode", ["embedded", "referenced", "none"]],
+      ["image_export_mode", ["placeholder", "embedded", "referenced"]],
     ]);
 
     for (const [key, validValues] of enumValidations) {
@@ -2842,14 +2842,6 @@ export class DoclingCLIClient implements DoclingCLI {
 
     ["images_scale", (scale: unknown) => ["--images-scale", String(scale)]],
     [
-      "generate_page_images",
-      (enable: unknown) => (enable ? ["--generate-page-images"] : []),
-    ],
-    [
-      "generate_picture_images",
-      (enable: unknown) => (enable ? ["--generate-picture-images"] : []),
-    ],
-    [
       "image_export_mode",
       (mode: unknown) => ["--image-export-mode", String(mode)],
     ],
@@ -2903,6 +2895,7 @@ export class DoclingCLIClient implements DoclingCLI {
       "layout_batch_size",
       (size: unknown) => ["--layout-batch-size", String(size)],
     ],
+    ["page_batch_size", (size: unknown) => ["--page-batch-size", String(size)]],
     [
       "batch_timeout_seconds",
       (timeout: unknown) => ["--batch-timeout", String(timeout)],
@@ -2928,6 +2921,21 @@ export class DoclingCLIClient implements DoclingCLI {
       "enable_remote_services",
       (enable: unknown) => (enable ? ["--enable-remote-services"] : []),
     ],
+
+    ["vlm_model", (model: unknown) => ["--vlm-model", String(model)]],
+    ["asr_model", (model: unknown) => ["--asr-model", String(model)]],
+
+    [
+      "include_images",
+      (enable: unknown) => (enable ? ["--include-images"] : []),
+    ],
+
+    [
+      "show_external_plugins",
+      (enable: unknown) => (enable ? ["--show-external-plugins"] : []),
+    ],
+
+    ["logo", (enable: unknown) => (enable ? ["--logo"] : [])],
   ]);
 
   /**
