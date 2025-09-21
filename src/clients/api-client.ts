@@ -360,15 +360,22 @@ export class DoclingAPIClient implements DoclingAPI {
 
   /**
    * Convert documents from URLs or base64 sources (synchronous)
+   * Ensures JSON (inbody) response by default unless caller specifies a target.
    */
   async convertSource(
     request: ConvertDocumentsRequest
   ): Promise<ConvertDocumentResponse | PresignedUrlConvertDocumentResponse> {
-    this.validateConvertRequest(request);
+    // Default to inbody target so the server returns JSON instead of ZIP
+    const normalizedRequest: ConvertDocumentsRequest = {
+      ...request,
+      target: request.target ?? { kind: "inbody" },
+    };
+
+    this.validateConvertRequest(normalizedRequest);
 
     const response = await this.http.postJson<
       ConvertDocumentResponse | PresignedUrlConvertDocumentResponse
-    >("/v1/convert/source", request);
+    >("/v1/convert/source", normalizedRequest);
     return response.data;
   }
 
@@ -409,15 +416,21 @@ export class DoclingAPIClient implements DoclingAPI {
 
   /**
    * Convert documents from URLs or base64 sources (asynchronous)
+   * Defaults to inbody target so subsequent getResult() returns JSON.
    */
   async convertSourceAsync(
     request: ConvertDocumentsRequest
   ): Promise<AsyncConversionTask> {
-    this.validateConvertRequest(request);
+    const normalizedRequest: ConvertDocumentsRequest = {
+      ...request,
+      target: request.target ?? { kind: "inbody" },
+    };
+
+    this.validateConvertRequest(normalizedRequest);
 
     const response = await this.http.postJson<TaskStatusResponse>(
       "/v1/convert/source/async",
-      request
+      normalizedRequest
     );
     const taskData = response.data;
 
