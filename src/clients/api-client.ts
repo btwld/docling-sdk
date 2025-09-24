@@ -504,11 +504,12 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   async pollTaskStatus(
     taskId: string,
-    waitSeconds = 1
+    waitSeconds?: number
   ): Promise<TaskStatusResponse> {
     try {
+      const actualWaitSeconds = waitSeconds ?? this.config.waitSeconds ?? 100;
       const response = await this.http.getJson<TaskStatusResponse>(
-        `/v1/status/poll/${taskId}?wait=${waitSeconds}`
+        `/v1/status/poll/${taskId}?wait=${actualWaitSeconds}`
       );
       return response.data;
     } catch (error) {
@@ -1018,31 +1019,33 @@ export class DoclingAPIClient implements DoclingAPI {
   }
 
   /**
-   * Wait for task completion by polling status until terminal state
-   * Uses long polling with wait parameter for efficient polling
+   * Wait for task completion using centralized AsyncTaskManager
+   * This delegates all polling logic to the task manager for consistency
    */
   private async waitForTaskCompletion(
     taskId: string
   ): Promise<TaskStatusResponse> {
-    const maxMs = 15 * 60 * 1000; // 15 minutes max
-    const waitSeconds = 10; // Wait up to 10 seconds per request
-    const start = Date.now();
+    const taskManager = this.getTaskManager();
+    const waitSeconds = this.config.waitSeconds ?? 100;
+    const pollingRetries = this.config.pollingRetries ?? 5;
 
-    while (Date.now() - start < maxMs) {
-      // Use long polling - server will wait up to waitSeconds for completion
-      const status = await this.pollTaskStatus(taskId, waitSeconds);
-      if (
-        status.task_status === "success" ||
-        status.task_status === "failure"
-      ) {
-        return status;
-      }
+    // Start polling with the centralized task manager
+    taskManager.startPollingExistingTask(taskId, {
+      timeout: 15 * 60 * 1000, // 15 minutes max
+      pollInterval: 2000,
+      maxPolls: 450, // 15 minutes / 2 seconds
+      waitSeconds,
+      pollingRetries,
+    });
 
-      // If still pending/started, continue polling
-      // No additional delay needed since server already waited
+    // Wait for completion using the task manager
+    const result = await taskManager.waitForCompletion(taskId);
+
+    if (!result.success) {
+      throw new Error(result.error?.message || "Task failed");
     }
 
-    // Final poll without wait parameter
+    // Return the final status
     return this.pollTaskStatus(taskId, 0);
   }
 
@@ -1403,7 +1406,7 @@ export class DoclingAPIClient implements DoclingAPI {
   }
 
   /**
-   * Recursive polling method for task status
+   * Polling method using centralized AsyncTaskManager with progress updates
    */
   private async pollRecursively(
     taskId: string,
@@ -1416,29 +1419,43 @@ export class DoclingAPIClient implements DoclingAPI {
       message?: string;
     }) => void
   ): Promise<TaskStatusResponse> {
-    const status = await this.pollTaskStatus(taskId);
+    const taskManager = this.getTaskManager();
+    const waitSeconds = this.config.waitSeconds ?? 100;
+    const pollingRetries = this.config.pollingRetries ?? 5;
 
-    if (onProgress && pollCount > 0) {
-      const progress = Math.min(90, 30 + (pollCount / maxPolls) * 60);
-      onProgress({
-        stage: "processing",
-        percentage: progress,
-        conversionProgress: progress,
-        message: `Processing... ${Math.round(progress)}%`,
+    // Set up progress tracking
+    if (onProgress) {
+      taskManager.on("status", (_, currentTaskId) => {
+        if (currentTaskId === taskId) {
+          const progress = Math.min(90, 30 + (pollCount / maxPolls) * 60);
+          onProgress({
+            stage: "processing",
+            percentage: progress,
+            conversionProgress: progress,
+            message: `Processing... ${Math.round(progress)}%`,
+          });
+        }
       });
     }
 
-    const isStillProcessing =
-      status.task_status === "pending" || status.task_status === "started";
-    const hasMorePolls = pollCount < maxPolls;
+    // Start polling with the centralized task manager
+    taskManager.startPollingExistingTask(taskId, {
+      timeout: maxPolls * 2000, // maxPolls * pollInterval
+      pollInterval: 2000,
+      maxPolls,
+      waitSeconds,
+      pollingRetries,
+    });
 
-    if (isStillProcessing && hasMorePolls) {
-      const { setTimeout } = await import("node:timers/promises");
-      await setTimeout(5000);
-      return this.pollRecursively(taskId, pollCount + 1, maxPolls, onProgress);
+    // Wait for completion using the task manager
+    const result = await taskManager.waitForCompletion(taskId);
+
+    if (!result.success) {
+      throw new Error(result.error?.message || "Task failed");
     }
 
-    return status;
+    // Return the final status
+    return this.pollTaskStatus(taskId, 0);
   }
 
   /**

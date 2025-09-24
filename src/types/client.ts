@@ -104,6 +104,8 @@ export interface DoclingSharedConfig {
   defaultOptions?: ConversionOptions;
   retries?: number;
   timeout?: number;
+  waitSeconds?: number; // Default wait time for long polling (default: 100)
+  pollingRetries?: number; // Max retries for polling failures (default: 5)
 
   ocr_engine?: OcrEngine;
   ocr_options?: OcrOptions;
