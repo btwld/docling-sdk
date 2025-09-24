@@ -4,14 +4,22 @@ import type { HttpClient } from "../api/http";
 /**
  * Task status from the API
  */
-export type TaskStatus = "pending" | "started" | "success" | "failure" | "revoked";
+export type TaskStatus =
+  | "pending"
+  | "started"
+  | "success"
+  | "failure"
+  | "revoked";
 
 /**
  * Task events that can be emitted
  */
 export interface TaskEvents {
   status: (status: TaskStatus, taskId: string) => void;
-  progress: (progress: { stage: string; message?: string }, taskId: string) => void;
+  progress: (
+    progress: { stage: string; message?: string },
+    taskId: string
+  ) => void;
   success: (taskId: string) => void;
   failure: (error: string, taskId: string) => void;
   timeout: (taskId: string) => void;
@@ -28,6 +36,10 @@ export interface TaskOptions {
   pollInterval?: number;
   /** Maximum number of polls before timeout */
   maxPolls?: number;
+  /** Wait time for long polling (seconds) */
+  waitSeconds?: number;
+  /** Maximum retries for polling failures */
+  pollingRetries?: number;
 }
 
 /**
@@ -50,7 +62,10 @@ export interface TaskResult<T = unknown> {
  * Handles async task submission, polling, and completion
  * Reusable across API, CLI, and other contexts
  */
-export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskManager {
+export class AsyncTaskManager
+  extends EventEmitter
+  implements TypedAsyncTaskManager
+{
   private activeTasks = new Map<
     string,
     {
@@ -78,6 +93,8 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
       timeout: options.timeout || 300000,
       pollInterval: options.pollInterval || 2000,
       maxPolls: options.maxPolls || 150,
+      waitSeconds: options.waitSeconds || 100,
+      pollingRetries: options.pollingRetries || 5,
     };
 
     try {
@@ -101,9 +118,31 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
       return taskId;
     } catch (error) {
-      const errorObj = error instanceof Error ? error : new Error(String(error));
+      const errorObj =
+        error instanceof Error ? error : new Error(String(error));
       this.emit("error", errorObj, "unknown");
       throw errorObj;
+    }
+  }
+
+  startPollingExistingTask(taskId: string, options: TaskOptions = {}): void {
+    const taskOptions: Required<TaskOptions> = {
+      timeout: options.timeout || 300000,
+      pollInterval: options.pollInterval || 2000,
+      maxPolls: options.maxPolls || 150,
+      waitSeconds: options.waitSeconds || 100,
+      pollingRetries: options.pollingRetries || 5,
+    };
+
+    if (!this.activeTasks.has(taskId)) {
+      this.activeTasks.set(taskId, {
+        startTime: Date.now(),
+        options: taskOptions,
+      });
+
+      this.startPolling(taskId);
+      this.setTaskTimeout(taskId);
+      this.emit("status", "pending", taskId);
     }
   }
 
@@ -239,6 +278,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
     if (!task) return;
 
     let pollCount = 0;
+    let consecutiveFailures = 0;
 
     const poll = async () => {
       try {
@@ -250,9 +290,15 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
           return;
         }
 
+        const requestStart = Date.now();
+        const waitSeconds = task.options.waitSeconds ?? 100;
+
         const response = await this.http.getJson<{ task_status: TaskStatus }>(
-          `/v1/status/poll/${taskId}`
+          `/v1/status/poll/${taskId}?wait=${waitSeconds}`
         );
+
+        // Reset failure counter on successful request
+        consecutiveFailures = 0;
 
         const status = response.data.task_status;
         this.emit("status", status, taskId);
@@ -267,10 +313,41 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
           return;
         }
 
-        task.pollTimer = setTimeout(poll, task.options.pollInterval);
+        const requestDuration = Date.now() - requestStart;
+        const delay =
+          requestDuration < 5000
+            ? Math.min(task.options.pollInterval ?? 2000, waitSeconds * 1000)
+            : 1000; // Minimal delay if server did proper long polling
+
+        task.pollTimer = setTimeout(poll, delay);
       } catch (error) {
-        const errorObj = error instanceof Error ? error : new Error(String(error));
-        this.emit("error", errorObj, taskId);
+        consecutiveFailures++;
+        const maxRetries = task.options.pollingRetries ?? 5;
+
+        console.warn(
+          `⚠️  AsyncTaskManager polling failed for task ${taskId} (${consecutiveFailures}/${maxRetries}):`,
+          error instanceof Error ? error.message : String(error)
+        );
+
+        if (consecutiveFailures >= maxRetries) {
+          const errorObj = new Error(
+            `Polling failed after ${maxRetries} consecutive attempts. Last error: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+          this.emit("error", errorObj, taskId);
+          return;
+        }
+
+        const retryDelay = Math.min(
+          2000 * 2 ** (consecutiveFailures - 1),
+          32000
+        );
+        console.log(
+          `🔄 AsyncTaskManager retrying task ${taskId} in ${retryDelay}ms...`
+        );
+
+        task.pollTimer = setTimeout(poll, retryDelay);
       }
     };
 
@@ -323,7 +400,10 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
  */
 export interface TypedAsyncTaskManager {
   on<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
-  emit<K extends keyof TaskEvents>(event: K, ...args: Parameters<TaskEvents[K]>): boolean;
+  emit<K extends keyof TaskEvents>(
+    event: K,
+    ...args: Parameters<TaskEvents[K]>
+  ): boolean;
   once<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
   off<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
 }

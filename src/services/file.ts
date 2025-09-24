@@ -135,40 +135,28 @@ export class FileService {
       const taskData = response.data;
       const taskId = taskData.task_id;
 
-      let attempts = 0;
-      const maxAttempts = 150; // 150 * 2s = 5 minutes max
+      // Use centralized task manager for polling
+      this.taskManager.startPollingExistingTask(taskId, {
+        timeout: 15 * 60 * 1000, // 15 minutes max
+        pollInterval: 2000,
+        maxPolls: 450, // 15 minutes / 2 seconds
+        waitSeconds: 100,
+        pollingRetries: 5,
+      });
 
-      while (attempts < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
-        attempts++;
+      // Wait for completion using the task manager
+      const result = await this.taskManager.waitForCompletion(taskId);
 
-        const statusResponse = await this.http.getJson<TaskStatusResponse>(
-          `/v1/status/poll/${taskId}`
-        );
-
-        const status = statusResponse.data.task_status;
-
-        if (status === "success") {
-          // Task completed, get the result
-          const resultResponse =
-            await this.http.getJson<ConvertDocumentResponse>(
-              `/v1/result/${taskId}`
-            );
-
-          return resultResponse.data;
-        }
-        if (status === "failure") {
-          throw new Error(
-            `Async task failed with status: ${status}. Task ID: ${taskId}`
-          );
-        }
+      if (!result.success) {
+        throw new Error(result.error?.message || "Task failed");
       }
 
-      throw new Error(
-        `Async task timed out after ${
-          maxAttempts * 2
-        } seconds. Task ID: ${taskId}, Attempts: ${attempts}`
+      // Task completed, get the result
+      const resultResponse = await this.http.getJson<ConvertDocumentResponse>(
+        `/v1/result/${taskId}`
       );
+
+      return resultResponse.data;
     } catch (error) {
       throw error instanceof Error
         ? error
@@ -394,26 +382,26 @@ export class FileService {
         };
       }
 
-      const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const maxMs = 15 * 60 * 1000;
-      const intervalMs = 2000;
-      const start = Date.now();
+      // Use centralized task manager for polling
+      this.taskManager.startPollingExistingTask(taskId, {
+        timeout: 15 * 60 * 1000, // 15 minutes max
+        pollInterval: 2000,
+        maxPolls: 450, // 15 minutes / 2 seconds
+        waitSeconds: 100,
+        pollingRetries: 5,
+      });
 
-      let finalStatus: string | undefined;
-      while (Date.now() - start < maxMs) {
-        const status = await this.http.getJson<{ task_status: string }>(
-          `/v1/status/poll/${taskId}`
-        );
+      // Wait for completion using the task manager
+      const result = await this.taskManager.waitForCompletion(taskId);
 
-        if (
-          status.data.task_status === "success" ||
-          status.data.task_status === "failure"
-        ) {
-          finalStatus = status.data.task_status;
-          break;
-        }
-        await delay(intervalMs);
+      if (!result.success) {
+        return {
+          success: false,
+          error: { message: result.error?.message || "Task failed" },
+        };
       }
+
+      const finalStatus = result.finalStatus;
 
       if (!finalStatus) {
         return {
