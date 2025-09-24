@@ -340,7 +340,7 @@ export class AsyncTaskManager
         }
 
         const retryDelay = Math.min(
-          2000 * Math.pow(2, consecutiveFailures - 1),
+          2000 * 2 ** (consecutiveFailures - 1),
           32000
         );
         console.log(
