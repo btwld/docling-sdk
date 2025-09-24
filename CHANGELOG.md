@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [1.3.4](https://github.com/btwld/docling-sdk/compare/v1.3.3...v1.3.4) (2025-09-24)
+
+### 🐛 Bug Fixes
+
+- fix: task long polling interval and manager (#43) (ba22bb3)
+
+
 ## [1.3.3](https://github.com/btwld/docling-sdk/compare/v1.3.2...v1.3.3) (2025-09-21)
 
 ### 🐛 Bug Fixes
