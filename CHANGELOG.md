@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [1.3.6](https://github.com/btwld/docling-sdk/compare/v1.3.5...v1.3.6) (2025-10-09)
+
+### ✨ Features
+
+- feat: add comprehensive document chunking support (#48) (d2ffca0)
+
+
 ## [1.3.5](https://github.com/btwld/docling-sdk/compare/v1.3.4...v1.3.5) (2025-10-09)
 
 ### 🐛 Bug Fixes
