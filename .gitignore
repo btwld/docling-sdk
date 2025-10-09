@@ -88,3 +88,6 @@ pnpm-lock.yaml
 
 # Biome cache
 .biome/
+
+# Test package folder
+npm-package-test/

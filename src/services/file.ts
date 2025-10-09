@@ -508,22 +508,72 @@ export class FileService {
   ): Record<string, unknown> {
     const fields: Record<string, unknown> = {};
 
+    if (options.from_formats) fields.from_formats = options.from_formats;
     if (options.to_formats) fields.to_formats = options.to_formats;
-    if (options.pdf_backend) fields.pdf_backend = options.pdf_backend;
+
+    if (options.pipeline) fields.pipeline = options.pipeline;
+    if (options.page_range) fields.page_range = options.page_range;
+
     if (options.do_ocr !== undefined) fields.do_ocr = options.do_ocr.toString();
     if (options.force_ocr !== undefined)
       fields.force_ocr = options.force_ocr.toString();
     if (options.ocr_engine) fields.ocr_engine = options.ocr_engine;
+    if (options.ocr_lang) fields.ocr_lang = options.ocr_lang;
+    if (options.ocr_options) fields.ocr_options = options.ocr_options;
+
+    // PDF backend
+    if (options.pdf_backend) fields.pdf_backend = options.pdf_backend;
+
+    // Table options
     if (options.table_mode) fields.table_mode = options.table_mode;
-    if (options.pipeline) fields.pipeline = options.pipeline;
-    if (options.abort_on_error !== undefined)
-      fields.abort_on_error = options.abort_on_error.toString();
+    if (options.table_cell_matching !== undefined)
+      fields.table_cell_matching = options.table_cell_matching.toString();
     if (options.do_table_structure !== undefined)
       fields.do_table_structure = options.do_table_structure.toString();
+    if (options.table_structure_options)
+      fields.table_structure_options = options.table_structure_options;
+
+    if (options.image_export_mode)
+      fields.image_export_mode = options.image_export_mode;
     if (options.include_images !== undefined)
       fields.include_images = options.include_images.toString();
     if (options.images_scale !== undefined)
       fields.images_scale = options.images_scale.toString();
+    if (options.generate_page_images !== undefined)
+      fields.generate_page_images = options.generate_page_images.toString();
+    if (options.generate_picture_images !== undefined)
+      fields.generate_picture_images =
+        options.generate_picture_images.toString();
+
+    // Enrichment options
+    if (options.do_code_enrichment !== undefined)
+      fields.do_code_enrichment = options.do_code_enrichment.toString();
+    if (options.do_formula_enrichment !== undefined)
+      fields.do_formula_enrichment = options.do_formula_enrichment.toString();
+    if (options.do_picture_classification !== undefined)
+      fields.do_picture_classification =
+        options.do_picture_classification.toString();
+    if (options.do_picture_description !== undefined)
+      fields.do_picture_description = options.do_picture_description.toString();
+    if (options.picture_description_area_threshold !== undefined)
+      fields.picture_description_area_threshold =
+        options.picture_description_area_threshold.toString();
+    if (options.picture_description_local)
+      fields.picture_description_local = options.picture_description_local;
+    if (options.picture_description_api)
+      fields.picture_description_api = options.picture_description_api;
+
+    // Other options
+    if (options.abort_on_error !== undefined)
+      fields.abort_on_error = options.abort_on_error.toString();
+    if (options.document_timeout !== undefined)
+      fields.document_timeout = options.document_timeout.toString();
+    if (options.md_page_break_placeholder)
+      fields.md_page_break_placeholder = options.md_page_break_placeholder;
+    if (options.create_legacy_output !== undefined)
+      fields.create_legacy_output = options.create_legacy_output.toString();
+    if (options.force_backend_text !== undefined)
+      fields.force_backend_text = options.force_backend_text.toString();
 
     if (targetKind) {
       fields.target_type = targetKind;
