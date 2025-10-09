@@ -19,6 +19,7 @@ Docling SDK provides a comprehensive TypeScript interface for:
 - 📁 **File Processing**: Support for file uploads and batch processing
 - 🎯 **Multiple Formats**: PDF, DOCX, PPTX, HTML, Images, CSV, XML, JSON, Audio, and more
 - 📄 **Output Options**: Markdown, JSON, HTML, HTML Split Page, Text, DocTags
+- 🔗 **Document Chunking**: Break documents into semantic chunks for RAG applications
 - ☁️ **S3 Integration**: Direct S3 source reading and target uploading
 - 🤖 **VLM Pipeline**: Vision Language Model support for image analysis and description
 - ⚡ **Streaming**: Memory-efficient processing with stream support
@@ -158,24 +159,167 @@ const json = await client.getTaskResult(t.taskId);
 console.log(json.status, Object.keys(json.document || {}));
 ```
 
+### Document Chunking (Quick Start)
+
+```typescript
+import { Docling } from "docling-sdk";
+
+const client = new Docling({
+  api: { baseUrl: "http://localhost:5001" },
+});
+
+// Basic chunking with HybridChunker
+const chunks = await client.chunkHybridSync(documentBuffer, "document.pdf", {
+  chunking_max_tokens: 200,
+  chunking_use_markdown_tables: true,
+});
+
+console.log(`Created ${chunks.chunks.length} chunks`);
+chunks.chunks.forEach((chunk, i) => {
+  console.log(`Chunk ${i + 1}: ${chunk.text.slice(0, 100)}...`);
+});
+
+// Async chunking with progress
+const task = await client.chunkHybridFileAsync({
+  files: documentBuffer,
+  filename: "document.pdf",
+  chunking_max_tokens: 150,
+});
+
+task.on("progress", (status) => {
+  console.log(`Status: ${status.task_status}`);
+});
+
+const result = await task.waitForCompletion();
+const finalChunks = await task.getResult();
+```
+
 ## Examples (simple → advanced)
 
-- 01-api.ts: Basic API usage (health, sync inbody, async ZIP, convertToFile)
+- 01-basic-api.ts: Basic API usage (health, sync inbody, async ZIP, convertToFile)
 - 02-streaming.ts: True streaming (content md and ZIP via multipart)
-- 03-cli.ts: CLI flows parity
-- 04-async-progress.ts: Programmatic progress polling (task.poll → task.getResult)
-- 05-async-webhook.ts: Webhook trigger after completion
+- 03-async-processing.ts: Programmatic progress polling (task.poll → task.getResult)
+- 04-chunking.ts: Document chunking with HybridChunker and HierarchicalChunker
+- 04-cli-client.ts: CLI flows parity
+- 05-chunking-quickstart.ts: Quick start guide for document chunking
+- 05-s3-integration.ts: S3 source reading and target uploading
+- 06-typescript-types.ts: TypeScript type usage and validation
 
 Run examples
 
 - export DOCLING_URL=https://your-docling-serve.example.com
-- npx tsx examples/01-api.ts
+- npx tsx examples/01-basic-api.ts
 - npx tsx examples/02-streaming.ts
-- npx tsx examples/03-cli.ts
-- npx tsx examples/04-async-progress.ts
-- WEBHOOK_URL=https://your-webhook-endpoint npx tsx examples/05-async-webhook.ts
+- npx tsx examples/03-async-processing.ts
+- npx tsx examples/04-chunking.ts
+- npx tsx examples/04-cli-client.ts
+- npx tsx examples/05-chunking-quickstart.ts
+- npx tsx examples/05-s3-integration.ts
+- npx tsx examples/06-typescript-types.ts
 
 ## Advanced Features
+
+### Document Chunking
+
+Break documents into semantic chunks for RAG (Retrieval Augmented Generation) applications:
+
+```typescript
+// HybridChunker - Advanced chunking with token control
+const hybridChunks = await client.chunkHybridSync(
+  documentBuffer,
+  "document.pdf",
+  {
+    chunking_max_tokens: 200,
+    chunking_use_markdown_tables: true,
+    chunking_include_raw_text: true,
+    chunking_merge_peers: true,
+  }
+);
+
+console.log(`Created ${hybridChunks.chunks.length} chunks`);
+hybridChunks.chunks.forEach((chunk, i) => {
+  console.log(`Chunk ${i + 1}: ${chunk.text.slice(0, 100)}...`);
+  console.log(`Headings: ${chunk.headings?.join(" > ") || "None"}`);
+  console.log(`Tokens: ${chunk.num_tokens || "N/A"}`);
+});
+
+// HierarchicalChunker - Structure-aware chunking
+const hierarchicalChunks = await client.chunkHierarchicalSync(
+  documentBuffer,
+  "document.pdf",
+  {
+    chunking_use_markdown_tables: true,
+    chunking_include_raw_text: false,
+  }
+);
+
+// Async chunking with progress tracking
+const chunkTask = await client.chunkHybridFileAsync({
+  files: documentBuffer,
+  filename: "document.pdf",
+  chunking_max_tokens: 150,
+});
+
+chunkTask.on("progress", (status) => {
+  console.log(`Chunking progress: ${status.task_status}`);
+});
+
+const result = await chunkTask.waitForCompletion();
+const chunks = await chunkTask.getResult();
+
+// Chunk from URL sources
+const urlChunks = await client.chunkHybridSource({
+  sources: [
+    {
+      kind: "http",
+      url: "https://example.com/document.pdf",
+    },
+  ],
+  chunking_options: {
+    chunker: "hybrid",
+    max_tokens: 250,
+    use_markdown_tables: true,
+  },
+});
+
+// Async source chunking with HierarchicalChunker
+const asyncSourceTask = await client.chunkHierarchicalSourceAsync({
+  sources: [
+    {
+      kind: "http",
+      url: "https://example.com/document.pdf",
+    },
+  ],
+  chunking_options: {
+    chunker: "hierarchical",
+    use_markdown_tables: true,
+  },
+});
+
+const sourceResult = await asyncSourceTask.waitForCompletion();
+const sourceChunks = await asyncSourceTask.getResult();
+```
+
+#### Available Chunking Methods
+
+**Sync Methods (immediate results):**
+
+- `chunkHybridSync(file, filename, options)` - HybridChunker sync
+- `chunkHierarchicalSync(file, filename, options)` - HierarchicalChunker sync
+- `chunkHybridSource(request)` - HybridChunker from sources
+- `chunkHierarchicalSource(request)` - HierarchicalChunker from sources
+
+**Async Methods (auto-completion):**
+
+- `chunkHybridAsync(file, filename, options)` - HybridChunker async with auto-completion
+- `chunkHierarchicalAsync(file, filename, options)` - HierarchicalChunker async with auto-completion
+
+**Task-based Methods (manual control):**
+
+- `chunkHybridFileAsync(params)` - Returns AsyncChunkTask for manual control
+- `chunkHierarchicalFileAsync(params)` - Returns AsyncChunkTask for manual control
+- `chunkHybridSourceAsync(request)` - Async source chunking with HybridChunker
+- `chunkHierarchicalSourceAsync(request)` - Async source chunking with HierarchicalChunker
 
 ### S3 Integration
 

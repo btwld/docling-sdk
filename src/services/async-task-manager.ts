@@ -4,22 +4,14 @@ import type { HttpClient } from "../api/http";
 /**
  * Task status from the API
  */
-export type TaskStatus =
-  | "pending"
-  | "started"
-  | "success"
-  | "failure"
-  | "revoked";
+export type TaskStatus = "pending" | "started" | "success" | "failure" | "revoked";
 
 /**
  * Task events that can be emitted
  */
 export interface TaskEvents {
   status: (status: TaskStatus, taskId: string) => void;
-  progress: (
-    progress: { stage: string; message?: string },
-    taskId: string
-  ) => void;
+  progress: (progress: { stage: string; message?: string }, taskId: string) => void;
   success: (taskId: string) => void;
   failure: (error: string, taskId: string) => void;
   timeout: (taskId: string) => void;
@@ -62,10 +54,7 @@ export interface TaskResult<T = unknown> {
  * Handles async task submission, polling, and completion
  * Reusable across API, CLI, and other contexts
  */
-export class AsyncTaskManager
-  extends EventEmitter
-  implements TypedAsyncTaskManager
-{
+export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskManager {
   private activeTasks = new Map<
     string,
     {
@@ -118,8 +107,7 @@ export class AsyncTaskManager
 
       return taskId;
     } catch (error) {
-      const errorObj =
-        error instanceof Error ? error : new Error(String(error));
+      const errorObj = error instanceof Error ? error : new Error(String(error));
       this.emit("error", errorObj, "unknown");
       throw errorObj;
     }
@@ -339,13 +327,8 @@ export class AsyncTaskManager
           return;
         }
 
-        const retryDelay = Math.min(
-          2000 * 2 ** (consecutiveFailures - 1),
-          32000
-        );
-        console.log(
-          `🔄 AsyncTaskManager retrying task ${taskId} in ${retryDelay}ms...`
-        );
+        const retryDelay = Math.min(2000 * 2 ** (consecutiveFailures - 1), 32000);
+        console.log(`🔄 AsyncTaskManager retrying task ${taskId} in ${retryDelay}ms...`);
 
         task.pollTimer = setTimeout(poll, retryDelay);
       }
@@ -400,10 +383,7 @@ export class AsyncTaskManager
  */
 export interface TypedAsyncTaskManager {
   on<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
-  emit<K extends keyof TaskEvents>(
-    event: K,
-    ...args: Parameters<TaskEvents[K]>
-  ): boolean;
+  emit<K extends keyof TaskEvents>(event: K, ...args: Parameters<TaskEvents[K]>): boolean;
   once<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
   off<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
 }

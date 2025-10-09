@@ -1,10 +1,14 @@
 import type { EventEmitter } from "node:events";
 import type { AsyncTaskManager } from "../services/async-task-manager";
+import type { ChunkService } from "../services/chunk";
 import type { FileService } from "../services/file";
 import type { Result } from "../utils/result";
 import type {
   AcceleratorOptions,
+  AsyncChunkTask,
   AsyncConversionTask,
+  ChunkDocumentResponse,
+  ChunkFileUploadParams,
   ConversionFileResult,
   ConversionOptions,
   ConversionTarget,
@@ -13,7 +17,9 @@ import type {
   FileSource,
   FileUploadParams,
   HealthCheckResponse,
+  HierarchicalChunkerOptionsDocumentsRequest,
   HttpSource,
+  HybridChunkerOptionsDocumentsRequest,
   LayoutOptions,
   OcrEngine,
   OcrOptions,
@@ -22,8 +28,8 @@ import type {
   ProcessingPipeline,
   S3Source,
   TableMode,
-  TaskStatusResponse,
   TargetConversionResult,
+  TaskStatusResponse,
 } from "./api";
 
 /**
@@ -70,18 +76,12 @@ export interface S3Config {
 /**
  * Result-based conversion result for better error handling
  */
-export type SafeConversionResult = Result<
-  ConvertDocumentResponse,
-  ProcessingError
->;
+export type SafeConversionResult = Result<ConvertDocumentResponse, ProcessingError>;
 
 /**
  * Result-based file conversion result
  */
-export type SafeFileConversionResult = Result<
-  ConversionFileResult,
-  ProcessingError
->;
+export type SafeFileConversionResult = Result<ConversionFileResult, ProcessingError>;
 
 /**
  * Progress tracking configuration
@@ -277,6 +277,11 @@ export interface DoclingAPI extends DoclingClientBase {
   readonly files: FileService;
 
   /**
+   * Chunk service for handling chunking operations
+   */
+  readonly chunks: ChunkService;
+
+  /**
    * Convert using SYNC endpoint (fast JSON responses)
    */
   convertSync(
@@ -386,9 +391,7 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert documents from URLs or base64 sources (asynchronous)
    */
-  convertSourceAsync(
-    request: ConvertDocumentsRequest
-  ): Promise<AsyncConversionTask>;
+  convertSourceAsync(request: ConvertDocumentsRequest): Promise<AsyncConversionTask>;
 
   /**
    * Convert uploaded files (asynchronous)
@@ -403,10 +406,7 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Poll task status
    */
-  pollTaskStatus(
-    taskId: string,
-    waitSeconds?: number
-  ): Promise<TaskStatusResponse>;
+  pollTaskStatus(taskId: string, waitSeconds?: number): Promise<TaskStatusResponse>;
 
   /**
    * Get task result
@@ -434,10 +434,7 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert from file path
    */
-  convertFromFile(
-    filePath: string,
-    options?: ConversionOptions
-  ): Promise<ConvertDocumentResponse>;
+  convertFromFile(filePath: string, options?: ConversionOptions): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert from buffer
@@ -460,10 +457,7 @@ export interface DoclingAPI extends DoclingClientBase {
   /**
    * Convert from S3 source
    */
-  convertFromS3(
-    s3Config: S3Config,
-    options?: ConversionOptions
-  ): Promise<ConvertDocumentResponse>;
+  convertFromS3(s3Config: S3Config, options?: ConversionOptions): Promise<ConvertDocumentResponse>;
 
   /**
    * Convert with custom target (S3, PUT, etc.)
@@ -474,6 +468,80 @@ export interface DoclingAPI extends DoclingClientBase {
     target: ConversionTarget,
     options?: ConversionOptions
   ): Promise<TargetConversionResult>;
+
+  // ============================================================================
+  // CHUNK METHODS
+  // ============================================================================
+
+  /**
+   * Chunk document using HybridChunker (SYNC endpoint)
+   */
+  chunkHybridSync(
+    file: Buffer | string,
+    filename: string,
+    options?: ConversionOptions
+  ): Promise<ChunkDocumentResponse>;
+
+  /**
+   * Chunk document using HierarchicalChunker (SYNC endpoint)
+   */
+  chunkHierarchicalSync(
+    file: Buffer | string,
+    filename: string,
+    options?: ConversionOptions
+  ): Promise<ChunkDocumentResponse>;
+
+  /**
+   * Chunk document using HybridChunker (ASYNC endpoint)
+   */
+  chunkHybridAsync(
+    file: Buffer | string,
+    filename: string,
+    options?: ConversionOptions
+  ): Promise<ChunkDocumentResponse>;
+
+  /**
+   * Chunk document using HierarchicalChunker (ASYNC endpoint)
+   */
+  chunkHierarchicalAsync(
+    file: Buffer | string,
+    filename: string,
+    options?: ConversionOptions
+  ): Promise<ChunkDocumentResponse>;
+
+  /**
+   * Create async chunk task for HybridChunker
+   */
+  chunkHybridFileAsync(params: ChunkFileUploadParams): Promise<AsyncChunkTask>;
+
+  /**
+   * Create async chunk task for HierarchicalChunker
+   */
+  chunkHierarchicalFileAsync(params: ChunkFileUploadParams): Promise<AsyncChunkTask>;
+
+  /**
+   * Chunk sources using HybridChunker
+   */
+  chunkHybridSource(request: HybridChunkerOptionsDocumentsRequest): Promise<ChunkDocumentResponse>;
+
+  /**
+   * Chunk sources using HierarchicalChunker
+   */
+  chunkHierarchicalSource(
+    request: HierarchicalChunkerOptionsDocumentsRequest
+  ): Promise<ChunkDocumentResponse>;
+
+  /**
+   * Chunk sources using HybridChunker (ASYNC)
+   */
+  chunkHybridSourceAsync(request: HybridChunkerOptionsDocumentsRequest): Promise<AsyncChunkTask>;
+
+  /**
+   * Chunk sources using HierarchicalChunker (ASYNC)
+   */
+  chunkHierarchicalSourceAsync(
+    request: HierarchicalChunkerOptionsDocumentsRequest
+  ): Promise<AsyncChunkTask>;
 }
 
 /**
@@ -551,8 +619,8 @@ export interface DoclingCLI extends DoclingClientBase {
 export type DoclingClient<T extends DoclingConfig> = T extends { api: unknown }
   ? DoclingAPI
   : T extends { cli: unknown }
-  ? DoclingCLI
-  : DoclingAPI;
+    ? DoclingCLI
+    : DoclingAPI;
 
 /**
  * Type helper for creating strongly typed Docling instances

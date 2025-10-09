@@ -158,9 +158,7 @@ export class FileService {
 
       return resultResponse.data;
     } catch (error) {
-      throw error instanceof Error
-        ? error
-        : new Error("Async conversion failed");
+      throw error instanceof Error ? error : new Error("Async conversion failed");
     }
   }
 
@@ -268,22 +266,16 @@ export class FileService {
         };
       }
 
-      const resultResponse = await this.http.requestFileStream(
-        `/v1/result/${taskId}`,
-        {
-          headers: { Accept: "application/zip" },
-        }
-      );
+      const resultResponse = await this.http.requestFileStream(`/v1/result/${taskId}`, {
+        headers: { Accept: "application/zip" },
+      });
 
       const contentType = resultResponse.headers["content-type"] || "";
 
       if (contentType.includes("application/zip")) {
-        const contentDisposition =
-          resultResponse.headers["content-disposition"] || "";
+        const contentDisposition = resultResponse.headers["content-disposition"] || "";
         const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-        const zipFilename = filenameMatch
-          ? filenameMatch[1]
-          : `converted_${filename}.zip`;
+        const zipFilename = filenameMatch ? filenameMatch[1] : `converted_${filename}.zip`;
 
         const stream = resultResponse.fileStream || resultResponse.data;
 
@@ -337,11 +329,7 @@ export class FileService {
       { accept: "json" }
     );
 
-    if (
-      response.data &&
-      typeof response.data === "object" &&
-      "document" in response.data
-    ) {
+    if (response.data && typeof response.data === "object" && "document" in response.data) {
       return response.data as ConvertDocumentResponse;
     }
 
@@ -417,11 +405,10 @@ export class FileService {
         };
       }
 
-      const fileRes =
-        await this.http.requestFileStream<ConvertDocumentResponse>(
-          `/v1/result/${taskId}`,
-          { method: "GET", headers: { Accept: "application/zip" } }
-        );
+      const fileRes = await this.http.requestFileStream<ConvertDocumentResponse>(
+        `/v1/result/${taskId}`,
+        { method: "GET", headers: { Accept: "application/zip" } }
+      );
 
       if (fileRes.fileStream && fileRes.fileMetadata) {
         return {
@@ -452,10 +439,7 @@ export class FileService {
   private static readonly EXT_CT_MAP: ReadonlyMap<string, string> = new Map([
     ["pdf", "application/pdf"],
     ["doc", "application/msword"],
-    [
-      "docx",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ],
+    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
     ["txt", "text/plain"],
     ["md", "text/markdown"],
     ["html", "text/html"],
@@ -467,10 +451,7 @@ export class FileService {
 
   private getContentType(filename: string): string {
     const ext = filename.toLowerCase().split(".").pop();
-    return (
-      (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) ||
-      "application/octet-stream"
-    );
+    return (ext ? FileService.EXT_CT_MAP.get(ext) : undefined) || "application/octet-stream";
   }
 
   /**
@@ -515,8 +496,7 @@ export class FileService {
     if (options.page_range) fields.page_range = options.page_range;
 
     if (options.do_ocr !== undefined) fields.do_ocr = options.do_ocr.toString();
-    if (options.force_ocr !== undefined)
-      fields.force_ocr = options.force_ocr.toString();
+    if (options.force_ocr !== undefined) fields.force_ocr = options.force_ocr.toString();
     if (options.ocr_engine) fields.ocr_engine = options.ocr_engine;
     if (options.ocr_lang) fields.ocr_lang = options.ocr_lang;
     if (options.ocr_options) fields.ocr_options = options.ocr_options;
@@ -533,17 +513,14 @@ export class FileService {
     if (options.table_structure_options)
       fields.table_structure_options = options.table_structure_options;
 
-    if (options.image_export_mode)
-      fields.image_export_mode = options.image_export_mode;
+    if (options.image_export_mode) fields.image_export_mode = options.image_export_mode;
     if (options.include_images !== undefined)
       fields.include_images = options.include_images.toString();
-    if (options.images_scale !== undefined)
-      fields.images_scale = options.images_scale.toString();
+    if (options.images_scale !== undefined) fields.images_scale = options.images_scale.toString();
     if (options.generate_page_images !== undefined)
       fields.generate_page_images = options.generate_page_images.toString();
     if (options.generate_picture_images !== undefined)
-      fields.generate_picture_images =
-        options.generate_picture_images.toString();
+      fields.generate_picture_images = options.generate_picture_images.toString();
 
     // Enrichment options
     if (options.do_code_enrichment !== undefined)
@@ -551,8 +528,7 @@ export class FileService {
     if (options.do_formula_enrichment !== undefined)
       fields.do_formula_enrichment = options.do_formula_enrichment.toString();
     if (options.do_picture_classification !== undefined)
-      fields.do_picture_classification =
-        options.do_picture_classification.toString();
+      fields.do_picture_classification = options.do_picture_classification.toString();
     if (options.do_picture_description !== undefined)
       fields.do_picture_description = options.do_picture_description.toString();
     if (options.picture_description_area_threshold !== undefined)
