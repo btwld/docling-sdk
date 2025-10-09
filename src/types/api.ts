@@ -22,32 +22,17 @@ export type InputFormat =
 /**
  * Output formats supported by Docling
  */
-export type OutputFormat =
-  | "md"
-  | "json"
-  | "html"
-  | "html_split_page"
-  | "text"
-  | "doctags";
+export type OutputFormat = "md" | "json" | "html" | "html_split_page" | "text" | "doctags";
 
 /**
  * OCR engines available
  */
-export type OcrEngine =
-  | "easyocr"
-  | "tesserocr"
-  | "tesseract"
-  | "rapidocr"
-  | "ocrmac";
+export type OcrEngine = "easyocr" | "tesserocr" | "tesseract" | "rapidocr" | "ocrmac";
 
 /**
  * PDF backends available
  */
-export type PdfBackend =
-  | "pypdfium2"
-  | "dlparse_v1"
-  | "dlparse_v2"
-  | "dlparse_v4";
+export type PdfBackend = "pypdfium2" | "dlparse_v1" | "dlparse_v2" | "dlparse_v4";
 
 /**
  * Table extraction modes
@@ -181,11 +166,7 @@ export type TaskStatus = "pending" | "started" | "success" | "failure";
 /**
  * Conversion status
  */
-export type ConversionStatus =
-  | "success"
-  | "partial_success"
-  | "skipped"
-  | "failure";
+export type ConversionStatus = "success" | "partial_success" | "skipped" | "failure";
 
 /**
  * HTTP source for URL-based conversion
@@ -330,6 +311,13 @@ export interface ConversionOptions {
   vlm_pipeline_model?: VlmModelType;
   vlm_pipeline_model_local?: VlmModelLocal;
   vlm_pipeline_model_api?: VlmModelApi;
+
+  // Chunking options
+  chunking_use_markdown_tables?: boolean;
+  chunking_include_raw_text?: boolean;
+  chunking_max_tokens?: number | null;
+  chunking_tokenizer?: string;
+  chunking_merge_peers?: boolean;
 }
 
 /**
@@ -402,6 +390,32 @@ export interface ProcessingError {
   message: string;
   code?: string | undefined;
   details?: unknown;
+}
+
+/**
+ * Profiling scope (matches OpenAPI ProfilingScope)
+ */
+export type ProfilingScope = "page" | "document";
+
+/**
+ * Profiling item (matches OpenAPI ProfilingItem)
+ */
+export interface ProfilingItem {
+  scope: ProfilingScope;
+  count?: number;
+  times?: number[];
+  start_timestamps?: string[];
+}
+
+/**
+ * Export result container (matches OpenAPI ExportResult)
+ */
+export interface ExportResult {
+  kind: string;
+  content: ExportDocumentResponse;
+  status: ConversionStatus;
+  errors?: ProcessingError[];
+  timings?: Record<string, ProfilingItem>;
 }
 
 /**
@@ -484,6 +498,16 @@ export interface FileUploadParams extends ConversionOptions {
 }
 
 /**
+ * Chunk file upload parameters for multipart form data
+ */
+export interface ChunkFileUploadParams extends ConversionOptions {
+  files: File | File[] | Buffer | Buffer[];
+  filename?: string | string[];
+  include_converted_doc?: boolean;
+  target_type?: "inbody" | "zip";
+}
+
+/**
  * API client configuration
  */
 export interface ApiClientConfig {
@@ -531,9 +555,7 @@ export type ConversionResult = DocumentConversionSuccess | ConversionFailure;
  * Target conversion result for operations with custom targets (S3, PUT, etc.)
  * TypeScript will know the appropriate response type based on the operation
  */
-export type TargetConversionResult =
-  | TargetConversionSuccess
-  | ConversionFailure;
+export type TargetConversionResult = TargetConversionSuccess | ConversionFailure;
 
 /**
  * Union of all possible conversion results (for internal API methods)
@@ -544,9 +566,7 @@ export type AnyConversionResult = ConversionResult | TargetConversionResult;
  * Type guard to check if standard conversion result is successful
  * When true, TypeScript knows result.data.document exists
  */
-export function isConversionSuccess(
-  result: ConversionResult
-): result is DocumentConversionSuccess {
+export function isConversionSuccess(result: ConversionResult): result is DocumentConversionSuccess {
   return result.success === true;
 }
 
@@ -563,9 +583,7 @@ export function isTargetConversionSuccess(
 /**
  * Type guard to check if any conversion result is a failure
  */
-export function isConversionFailure(
-  result: AnyConversionResult
-): result is ConversionFailure {
+export function isConversionFailure(result: AnyConversionResult): result is ConversionFailure {
   return result.success === false;
 }
 
@@ -606,10 +624,7 @@ export function createSuccessResult(
  * Helper function to create a failed conversion result
  * Ensures proper literal type for success property
  */
-export function createFailureResult(
-  error: ProcessingError,
-  taskId?: string
-): ConversionFailure {
+export function createFailureResult(error: ProcessingError, taskId?: string): ConversionFailure {
   return {
     success: false as const,
     error,
@@ -632,6 +647,20 @@ export interface ConversionFileResult {
 }
 
 /**
+ * Result for chunk file-based operations (ZIP downloads)
+ */
+export interface ChunkFileResult {
+  success: boolean;
+  fileStream?: NodeReadable;
+  fileMetadata?: {
+    filename: string;
+    contentType: string;
+    size?: number;
+  };
+  error?: ProcessingError | undefined;
+}
+
+/**
  * Async conversion task interface
  */
 export interface AsyncConversionTask {
@@ -641,14 +670,98 @@ export interface AsyncConversionTask {
   meta?: TaskMeta | undefined;
 
   on(event: "progress", listener: (status: TaskStatusResponse) => void): this;
-  on(
-    event: "complete",
-    listener: (result: ConvertDocumentResponse) => void
-  ): this;
+  on(event: "complete", listener: (result: ConvertDocumentResponse) => void): this;
   on(event: "error", listener: (error: ProcessingError) => void): this;
 
   poll(): Promise<TaskStatusResponse>;
   waitForCompletion(): Promise<TaskStatusResponse>;
   getResult(): Promise<ConvertDocumentResponse>;
   cancel?(): Promise<void>;
+}
+
+/**
+ * Async chunk task interface
+ */
+export interface AsyncChunkTask {
+  taskId: string;
+  status: TaskStatus;
+  position?: number | undefined;
+  meta?: TaskMeta | undefined;
+
+  on(event: "progress", listener: (status: TaskStatusResponse) => void): this;
+  on(event: "complete", listener: (result: ChunkDocumentResponse) => void): this;
+  on(event: "error", listener: (error: ProcessingError) => void): this;
+
+  poll(): Promise<TaskStatusResponse>;
+  waitForCompletion(): Promise<TaskStatusResponse>;
+  getResult(): Promise<ChunkDocumentResponse>;
+  cancel?(): Promise<void>;
+}
+
+/**
+ * A single chunk of a document with its metadata and content
+ */
+export interface ChunkedDocumentResultItem {
+  filename: string;
+  chunk_index: number;
+  text: string;
+  raw_text?: string | null;
+  num_tokens?: number | null;
+  headings?: string[] | null;
+  captions?: string[] | null;
+  doc_items: string[];
+  page_numbers?: number[] | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Response from chunk operations
+ */
+export interface ChunkDocumentResponse {
+  chunks: ChunkedDocumentResultItem[];
+  documents: ExportResult[];
+  processing_time: number;
+}
+
+/**
+ * Configuration options for the HybridChunker
+ */
+export interface HybridChunkerOptions {
+  chunker?: "hybrid";
+  use_markdown_tables?: boolean;
+  include_raw_text?: boolean;
+  max_tokens?: number | null;
+  tokenizer?: string;
+  merge_peers?: boolean;
+}
+
+/**
+ * Configuration options for the HierarchicalChunker
+ */
+export interface HierarchicalChunkerOptions {
+  chunker?: "hierarchical";
+  use_markdown_tables?: boolean;
+  include_raw_text?: boolean;
+}
+
+/**
+ * Request for chunking documents with HybridChunker
+ */
+export interface HybridChunkerOptionsDocumentsRequest {
+  convert_options?: ConversionOptions;
+  sources: (FileSource | HttpSource | S3Source)[];
+  include_converted_doc?: boolean;
+  target?: ConversionTarget;
+  chunking_options?: HybridChunkerOptions;
+}
+
+/**
+ * Request for chunking documents with HierarchicalChunker
+ */
+export interface HierarchicalChunkerOptionsDocumentsRequest {
+  convert_options?: ConversionOptions;
+  sources: (FileSource | HttpSource | S3Source)[];
+  include_converted_doc?: boolean;
+  target?: ConversionTarget;
+  chunking_options?: HierarchicalChunkerOptions;
 }

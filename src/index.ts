@@ -9,6 +9,7 @@ export * from "./utils/result";
 export { CliUtils } from "./cli/utils";
 
 export { FileService } from "./services/file";
+export { ChunkService } from "./services/chunk";
 
 export {
   DoclingWebSocketClient,
