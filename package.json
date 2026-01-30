@@ -8,9 +8,40 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "browser": "./dist/browser.mjs",
+      "bun": "./dist/index.mjs",
+      "deno": "./dist/index.mjs",
+      "node": {
+        "import": "./dist/index.mjs",
+        "require": "./dist/index.js"
+      },
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.mjs"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "node": {
+        "import": "./dist/cli.mjs",
+        "require": "./dist/cli.js"
+      },
+      "import": "./dist/cli.mjs",
+      "require": "./dist/cli.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "default": "./dist/browser.mjs"
+    },
+    "./platform": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     }
+  },
+  "browser": {
+    "./dist/index.js": "./dist/browser.mjs",
+    "./dist/index.mjs": "./dist/browser.mjs"
   },
   "files": [
     "dist/**/*.js",
@@ -46,7 +77,15 @@
     "examples:async": "tsx examples/03-async-processing.ts",
     "examples:cli": "tsx examples/04-cli-client.ts",
     "examples:s3": "tsx examples/05-s3-integration.ts",
-    "examples:typescript": "tsx examples/06-typescript-types.ts"
+    "examples:typescript": "tsx examples/06-typescript-types.ts",
+    "examples:node": "tsx examples/runtimes/node.ts",
+    "examples:bun": "bun run examples/runtimes/bun.ts",
+    "examples:deno": "deno run --allow-net --allow-env --allow-read examples/runtimes/deno.ts",
+    "examples:browser": "vite examples/runtimes/browser",
+    "examples:worker": "cd examples/runtimes/cloudflare-worker && wrangler dev",
+    "openapi:fetch": "tsx scripts/fetch-openapi.ts",
+    "openapi:generate": "openapi-typescript openapi/docling-serve.json -o src/types/generated/api.ts",
+    "openapi:update": "npm run openapi:fetch && npm run openapi:generate"
   },
   "keywords": [
     "docling",
@@ -58,7 +97,12 @@
     "sdk",
     "client",
     "api",
-    "cli"
+    "cli",
+    "cross-runtime",
+    "browser",
+    "bun",
+    "deno",
+    "nodejs"
   ],
   "author": "Kauan Guesser <54258870+kauandotnet@users.noreply.github.com>",
   "license": "BSD-3-Clause",
@@ -77,9 +121,13 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "archiver": "^7.0.1",
-    "ws": "^8.18.0",
+    "mitt": "^3.0.1",
+    "ofetch": "^1.4.1",
     "zod": "^4.0.15"
+  },
+  "optionalDependencies": {
+    "archiver": "^7.0.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
@@ -90,11 +138,13 @@
     "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.8",
     "@vitest/ui": "^2.1.8",
+    "openapi-typescript": "^7.10.1",
     "rimraf": "^6.0.1",
     "tsup": "^8.3.5",
     "tsx": "^4.20.5",
     "typedoc": "^0.27.4",
     "typescript": "^5.7.2",
+    "vite": "^6.0.0",
     "vitest": "^2.1.8"
   },
   "peerDependencies": {

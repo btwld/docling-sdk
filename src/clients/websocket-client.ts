@@ -1,9 +1,14 @@
 /**
  * WebSocket client for real-time Docling task monitoring
+ * Uses cross-runtime WebSocket adapters
  */
 
-import { EventEmitter } from "node:events";
-import WebSocket from "ws";
+import { CrossEventEmitter } from "../platform/events";
+import { delay } from "../platform/timers";
+import {
+  CrossWebSocket,
+  type WebSocketHooks,
+} from "../platform/websocket";
 import { DoclingNetworkError, DoclingTimeoutError } from "../types";
 import type {
   ProcessingError,
@@ -29,15 +34,47 @@ export interface WebSocketConfig {
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
 /**
+ * WebSocket events
+ */
+interface DoclingWebSocketEvents {
+  [key: string]: unknown;
+  connecting: string;
+  connected: string;
+  disconnected: { code: number; reason: string };
+  error: Error;
+  connection: WebSocketMessage;
+  taskUpdate: TaskStatusResponse;
+  task_update: WebSocketMessage;
+  taskComplete: TaskStatusResponse;
+  taskFailed: TaskStatusResponse;
+  taskStarted: TaskStatusResponse;
+  taskError: ProcessingError;
+  unknownMessage: WebSocketMessage;
+  reconnecting: { attempt: number; delay: number };
+  reconnectFailed: { attempt: number; error: unknown };
+  progress: {
+    stage: string;
+    percentage?: number;
+    message?: string;
+    taskId: string;
+    position?: number;
+    status?: string;
+    timestamp: number;
+  };
+  status: [string, string];
+}
+
+/**
  * WebSocket client for task monitoring
  */
-export class DoclingWebSocketClient extends EventEmitter {
+export class DoclingWebSocketClient extends CrossEventEmitter<DoclingWebSocketEvents> {
   private config: Required<WebSocketConfig>;
-  private ws: WebSocket | null = null;
+  private ws: CrossWebSocket | null = null;
   private connectionState: ConnectionState = "disconnected";
   private reconnectAttempts = 0;
-  private heartbeatTimer: NodeJS.Timeout | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
+  private heartbeatTimer: ReturnType<typeof globalThis.setInterval> | null = null;
+  private reconnectAbortController: AbortController | null = null;
+  private _currentTaskId: string | null = null;
 
   constructor(config: WebSocketConfig) {
     super();
@@ -62,51 +99,74 @@ export class DoclingWebSocketClient extends EventEmitter {
    */
   async connectToTask(taskId: string): Promise<void> {
     const url = `${this.config.baseUrl}/v1/status/ws/${taskId}`;
+    this._currentTaskId = taskId;
 
     return new Promise((resolve, reject) => {
       try {
         this.connectionState = "connecting";
         this.emit("connecting", taskId);
 
-        this.ws = new WebSocket(url);
-
-        const timeoutController = { cancelled: false };
-        this.setupConnectionTimeout(timeoutController, reject);
-
-        this.ws.on("open", () => {
-          timeoutController.cancelled = true;
-          this.connectionState = "connected";
-          this.reconnectAttempts = 0;
-          this.startHeartbeat();
-          this.emit("connected", taskId);
-          resolve();
-        });
-
-        this.ws.on("message", (data: WebSocket.Data) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(data.toString());
-            this.handleMessage(message);
-          } catch (error) {
-            this.emit("error", new Error(`Failed to parse WebSocket message: ${error}`));
+        // Create timeout controller
+        let timeoutResolved = false;
+        const timeoutId = globalThis.setTimeout(() => {
+          if (!timeoutResolved && this.connectionState === "connecting") {
+            this.ws?.close();
+            reject(new DoclingTimeoutError(this.config.timeout, "WebSocket connection"));
           }
+        }, this.config.timeout);
+
+        const hooks: WebSocketHooks = {
+          open: () => {
+            timeoutResolved = true;
+            globalThis.clearTimeout(timeoutId);
+            this.connectionState = "connected";
+            this.reconnectAttempts = 0;
+            this.startHeartbeat();
+            this.emit("connected", taskId);
+            resolve();
+          },
+
+          message: (_peer, message) => {
+            try {
+              const parsed: WebSocketMessage = message.json();
+              this.handleMessage(parsed);
+            } catch (error) {
+              this.emit("error", new Error(`Failed to parse WebSocket message: ${error}`));
+            }
+          },
+
+          close: (_peer, event) => {
+            timeoutResolved = true;
+            globalThis.clearTimeout(timeoutId);
+            this.connectionState = "disconnected";
+            this.stopHeartbeat();
+            this.emit("disconnected", { code: event.code, reason: event.reason });
+
+            if (event.code !== 1000 && this.reconnectAttempts < this.config.reconnectAttempts) {
+              this.scheduleReconnect(taskId);
+            }
+          },
+
+          error: (_peer, event) => {
+            timeoutResolved = true;
+            globalThis.clearTimeout(timeoutId);
+            this.connectionState = "error";
+            this.stopHeartbeat();
+            const error = new DoclingNetworkError(`WebSocket error: ${event.message}`);
+            this.emit("error", error);
+            reject(error);
+          },
+        };
+
+        this.ws = new CrossWebSocket(url, {
+          timeout: this.config.timeout,
+          hooks,
         });
 
-        this.ws.on("close", (code: number, reason: Buffer) => {
-          timeoutController.cancelled = true;
-          this.connectionState = "disconnected";
-          this.stopHeartbeat();
-          this.emit("disconnected", { code, reason: reason.toString() });
-
-          if (code !== 1000 && this.reconnectAttempts < this.config.reconnectAttempts) {
-            this.scheduleReconnect(taskId);
-          }
-        });
-
-        this.ws.on("error", (error: Error) => {
-          timeoutController.cancelled = true;
+        this.ws.connect().catch((error) => {
+          timeoutResolved = true;
+          globalThis.clearTimeout(timeoutId);
           this.connectionState = "error";
-          this.stopHeartbeat();
-          this.emit("error", new DoclingNetworkError(`WebSocket error: ${error.message}`));
           reject(error);
         });
       } catch (error) {
@@ -127,6 +187,7 @@ export class DoclingWebSocketClient extends EventEmitter {
       this.ws = null;
     }
     this.connectionState = "disconnected";
+    this._currentTaskId = null;
   }
 
   /**
@@ -134,6 +195,13 @@ export class DoclingWebSocketClient extends EventEmitter {
    */
   getConnectionState(): ConnectionState {
     return this.connectionState;
+  }
+
+  /**
+   * Get current task ID being monitored
+   */
+  getCurrentTaskId(): string | null {
+    return this._currentTaskId;
   }
 
   /**
@@ -224,11 +292,7 @@ export class DoclingWebSocketClient extends EventEmitter {
    * Check if connected
    */
   isConnected(): boolean {
-    return (
-      this.connectionState === "connected" &&
-      this.ws !== null &&
-      this.ws.readyState === WebSocket.OPEN
-    );
+    return this.connectionState === "connected" && this.ws?.isConnected() === true;
   }
 
   /**
@@ -244,6 +308,18 @@ export class DoclingWebSocketClient extends EventEmitter {
         if (message.task) {
           this.emit("taskUpdate", message.task);
           this.emit("task_update", message);
+          this.emit("status", [message.task.task_status, message.task.task_id]);
+
+          // Emit progress event for ProgressTracker
+          this.emit("progress", {
+            stage: message.task.task_status,
+            percentage: this.calculateProgress(message.task.task_status),
+            message: `Task ${message.task.task_id}: ${message.task.task_status}`,
+            taskId: message.task.task_id,
+            position: message.task.task_position,
+            status: message.task.task_status,
+            timestamp: Date.now(),
+          });
 
           if (message.task.task_status === "success") {
             this.emit("taskComplete", message.task);
@@ -275,9 +351,14 @@ export class DoclingWebSocketClient extends EventEmitter {
   private startHeartbeat(): void {
     this.stopHeartbeat();
 
-    this.heartbeatTimer = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.ping();
+    this.heartbeatTimer = globalThis.setInterval(() => {
+      if (this.ws?.isConnected()) {
+        try {
+          // Send a ping via the WebSocket
+          this.ws.sendText(JSON.stringify({ type: "ping" }));
+        } catch {
+          // Ignore ping errors
+        }
       }
     }, this.config.heartbeatInterval);
   }
@@ -287,7 +368,7 @@ export class DoclingWebSocketClient extends EventEmitter {
    */
   private stopHeartbeat(): void {
     if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
+      globalThis.clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
   }
@@ -299,50 +380,35 @@ export class DoclingWebSocketClient extends EventEmitter {
     this.clearReconnectTimer();
 
     this.reconnectAttempts++;
-    const delay = this.config.reconnectDelay * 2 ** (this.reconnectAttempts - 1);
+    const reconnectDelay = this.config.reconnectDelay * 2 ** (this.reconnectAttempts - 1);
 
-    this.emit("reconnecting", { attempt: this.reconnectAttempts, delay });
+    this.emit("reconnecting", { attempt: this.reconnectAttempts, delay: reconnectDelay });
 
-    this.reconnectTimer = this.scheduleReconnectAttempt(taskId, delay) as unknown as NodeJS.Timeout;
-  }
+    this.reconnectAbortController = new AbortController();
 
-  /**
-   * Schedule reconnection attempt using timers/promises
-   */
-  private async scheduleReconnectAttempt(taskId: string, delay: number): Promise<void> {
-    const { setTimeout } = await import("node:timers/promises");
-    await setTimeout(delay);
-    try {
-      await this.connectToTask(taskId);
-    } catch (error) {
-      this.emit("reconnectFailed", {
-        attempt: this.reconnectAttempts,
-        error,
+    delay(reconnectDelay, undefined, this.reconnectAbortController.signal)
+      .then(async () => {
+        try {
+          await this.connectToTask(taskId);
+        } catch (error) {
+          this.emit("reconnectFailed", {
+            attempt: this.reconnectAttempts,
+            error,
+          });
+        }
+      })
+      .catch(() => {
+        // Aborted - do nothing
       });
-    }
-  }
-
-  /**
-   * Setup connection timeout using timers/promises
-   */
-  private async setupConnectionTimeout(
-    timeoutController: { cancelled: boolean },
-    reject: (reason?: unknown) => void
-  ): Promise<void> {
-    const { setTimeout } = await import("node:timers/promises");
-    await setTimeout(this.config.timeout);
-    if (!timeoutController.cancelled && this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-      this.ws.terminate();
-      reject(new DoclingTimeoutError(this.config.timeout, "WebSocket connection"));
-    }
   }
 
   /**
    * Clear reconnection timer
    */
   private clearReconnectTimer(): void {
-    if (this.reconnectTimer) {
-      this.reconnectTimer = null;
+    if (this.reconnectAbortController) {
+      this.reconnectAbortController.abort();
+      this.reconnectAbortController = null;
     }
   }
 
@@ -370,9 +436,21 @@ export class DoclingWebSocketClient extends EventEmitter {
 }
 
 /**
+ * WebSocket async task events
+ */
+interface WebSocketAsyncTaskEvents {
+  [key: string]: unknown;
+  progress: TaskStatusResponse;
+  complete: TaskStatusResponse;
+  failed: TaskStatusResponse;
+  error: ProcessingError | Error;
+  disconnected: undefined;
+}
+
+/**
  * Enhanced async task with WebSocket monitoring
  */
-export class WebSocketAsyncTask extends EventEmitter {
+export class WebSocketAsyncTask extends CrossEventEmitter<WebSocketAsyncTaskEvents> {
   private wsClient: DoclingWebSocketClient;
   private isMonitoring = false;
 
@@ -405,7 +483,7 @@ export class WebSocketAsyncTask extends EventEmitter {
       await this.wsClient.connectToTask(this.taskId);
       this.isMonitoring = true;
     } catch (error) {
-      this.emit("error", error);
+      this.emit("error", error as Error);
       throw error;
     }
   }
@@ -460,7 +538,7 @@ export class WebSocketAsyncTask extends EventEmitter {
 
     this.wsClient.on("disconnected", () => {
       this.isMonitoring = false;
-      this.emit("disconnected");
+      this.emit("disconnected", undefined);
     });
   }
 

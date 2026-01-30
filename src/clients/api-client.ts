@@ -1,6 +1,11 @@
-import { readFile } from "node:fs/promises";
-import type { Writable } from "node:stream";
 import { HttpClient } from "../api/http";
+import {
+  stringToUint8Array,
+  uint8ArrayToBase64,
+  isBinary,
+  base64ToUint8Array,
+} from "../platform/binary";
+import { isNode } from "../platform/detection";
 import type { AsyncTaskManager } from "../services/async-task-manager";
 import { ChunkService } from "../services/chunk";
 import { FileService } from "../services/file";
@@ -28,6 +33,11 @@ import type {
   TaskStatusResponse,
 } from "../types/api";
 import type { DoclingAPI, DoclingAPIConfig, S3Config } from "../types/client";
+import {
+  toOpenApiS3Source,
+  toOpenApiS3Target,
+  isUserFriendlyS3Config,
+} from "../types/adapters";
 import type {
   ProgressConfig,
   ProgressUpdate,
@@ -130,13 +140,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert document to various formats
    */
   async convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
   async convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {},
     progress?: ProgressConfig
@@ -151,7 +161,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Extract text content from document
    */
   async extractText(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse> {
@@ -165,13 +175,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert document to HTML format
    */
   async toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
   async toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {},
     progress?: ProgressConfig
@@ -194,13 +204,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert document to Markdown format
    */
   async toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
   async toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {},
     progress?: ProgressConfig
@@ -223,13 +233,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert document to multiple formats
    */
   async convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
   async convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
@@ -247,13 +257,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Process document with advanced options
    */
   async process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
   async process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {},
     progress?: ProgressConfig
@@ -269,34 +279,54 @@ export class DoclingAPIClient implements DoclingAPI {
    * Uses synchronous API endpoint with ZIP target for reliable file download
    */
   async convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConversionFileResult>;
   async convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConversionFileResult> {
     try {
       const mergedOptions = this.mergeWithDefaults(options);
 
-      // Convert string to Buffer if needed
-      const fileBuffer = typeof file === "string" ? Buffer.from(file) : file;
+      // Convert string to Uint8Array if needed
+      const fileBuffer = typeof file === "string" ? stringToUint8Array(file) : file;
 
       // Use synchronous convert endpoint with ZIP target as per OpenAPI spec
       // This is more reliable than async task manager for file downloads
       const fileData = await this.prepareFiles(fileBuffer, filename, mergedOptions.from_formats);
 
-      const response = await this.http.uploadFiles<Buffer>(
+      const response = await this.http.uploadFiles<Uint8Array>(
         "/v1/convert/file",
         fileData,
         { ...mergedOptions, target_type: "zip" },
         { accept: "bytes" }
       );
 
-      // For ZIP responses, the response.data is the Buffer containing the ZIP file
-      if (response.data && Buffer.isBuffer(response.data)) {
+      // For ZIP responses, the response.data is the Uint8Array containing the ZIP file
+      if (response.data && isBinary(response.data)) {
+        // Dynamic import for Node.js stream - only available in Node.js runtime
+        if (!isNode()) {
+          // In browser/Deno/Bun, return the raw data without stream
+          const contentDisposition = response.headers["content-disposition"] || "";
+          const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+          const zipFilename = filenameMatch?.[1]
+            ? filenameMatch[1].replace(/['"]/g, "")
+            : `converted_${filename}.zip`;
+
+          return {
+            success: true,
+            fileMetadata: {
+              filename: zipFilename,
+              contentType: "application/zip",
+              size: response.data.length,
+            },
+            data: response.data,
+          };
+        }
+
         const { Readable } = await import("node:stream");
 
         const contentDisposition = response.headers["content-disposition"] || "";
@@ -305,8 +335,9 @@ export class DoclingAPIClient implements DoclingAPI {
           ? filenameMatch[1].replace(/['"]/g, "")
           : `converted_${filename}.zip`;
 
-        // Create a readable stream from the buffer
-        const fileStream = Readable.from(response.data);
+        // Create a readable stream from the Uint8Array (convert to Buffer for Node.js stream)
+        const { Buffer } = await import("node:buffer");
+        const fileStream = Readable.from(Buffer.from(response.data));
 
         return {
           success: true,
@@ -544,7 +575,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert using SYNC endpoint (fast JSON responses)
    */
   async convertSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse> {
@@ -558,7 +589,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert using ASYNC endpoint (advanced workflows)
    */
   async convertAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse> {
@@ -604,7 +635,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Chunk document using HybridChunker (SYNC endpoint)
    */
   async chunkHybridSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse> {
@@ -618,7 +649,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Chunk document using HierarchicalChunker (SYNC endpoint)
    */
   async chunkHierarchicalSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse> {
@@ -632,7 +663,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Chunk document using HybridChunker (ASYNC endpoint)
    */
   async chunkHybridAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse> {
@@ -646,7 +677,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Chunk document using HierarchicalChunker (ASYNC endpoint)
    */
   async chunkHierarchicalAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse> {
@@ -749,26 +780,33 @@ export class DoclingAPIClient implements DoclingAPI {
   }
 
   /**
-   * Convert from file path
+   * Convert from file path (Node.js only)
+   * @throws Error if called outside Node.js runtime
    */
   async convertFromFile(
     filePath: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
+    if (!isNode()) {
+      throw new Error(
+        "convertFromFile is only available in Node.js. Use convert() with Uint8Array data instead."
+      );
+    }
+    const { readFile } = await import("node:fs/promises");
     const fileBuffer = await readFile(filePath);
 
     return await this.convertFile({
-      files: fileBuffer,
+      files: new Uint8Array(fileBuffer),
       ...this.config.defaultOptions,
       ...options,
     });
   }
 
   /**
-   * Convert from buffer
+   * Convert from buffer/Uint8Array
    */
   async convertFromBuffer(
-    buffer: Buffer,
+    buffer: Uint8Array,
     _filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
@@ -787,8 +825,8 @@ export class DoclingAPIClient implements DoclingAPI {
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
-    const buffer = Buffer.from(base64String, "base64");
-    return this.convertFromBuffer(buffer, filename, options);
+    const bytes = base64ToUint8Array(base64String);
+    return this.convertFromBuffer(bytes, filename, options);
   }
 
   /**
@@ -798,7 +836,7 @@ export class DoclingAPIClient implements DoclingAPI {
     s3Config: S3Config,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
-    const s3Source: S3Source = this.mapToApiS3Source(s3Config);
+    const s3Source: S3Source = toOpenApiS3Source(s3Config);
 
     const request: ConvertDocumentsRequest = {
       options: this.mergeWithDefaults(options),
@@ -829,17 +867,17 @@ export class DoclingAPIClient implements DoclingAPI {
       const mappedSources: (HttpSource | FileSource | S3Source)[] = sources.map((source) => {
         if (
           source.kind === "s3" &&
-          this.isUserFriendlyS3Config(source as unknown as Record<string, unknown>)
+          isUserFriendlyS3Config(source as unknown as Record<string, unknown>)
         ) {
-          return this.mapToApiS3Source(source as unknown as S3Config);
+          return toOpenApiS3Source(source as unknown as S3Config);
         }
         return source as HttpSource | FileSource | S3Source;
       });
 
       const mappedTarget: ConversionTarget =
         target.kind === "s3" &&
-        this.isUserFriendlyS3Config(target as unknown as Record<string, unknown>)
-          ? this.mapToApiS3Target(target as unknown as S3Config)
+        isUserFriendlyS3Config(target as unknown as Record<string, unknown>)
+          ? toOpenApiS3Target(target as unknown as S3Config)
           : (target as ConversionTarget);
 
       const request: ConvertDocumentsRequest = {
@@ -868,75 +906,6 @@ export class DoclingAPIClient implements DoclingAPI {
         error: this.normalizeError(error),
       };
     }
-  }
-
-  /**
-   * Map user-friendly S3Config to API S3Source format
-   */
-  private mapToApiS3Source(config: S3Config): S3Source {
-    const region = config.region || process.env.AWS_REGION || "us-east-1";
-    const endpoint = config.endpoint || `s3.${region}.amazonaws.com`;
-    const access_key = config.access_key_id || process.env.AWS_ACCESS_KEY_ID;
-    const secret_key = config.secret_access_key || process.env.AWS_SECRET_ACCESS_KEY;
-
-    if (!access_key || !secret_key) {
-      throw new Error(
-        "AWS credentials are required. Provide access_key_id and secret_access_key or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
-      );
-    }
-
-    if (!config.key) {
-      throw new Error("S3 key is required for source operations.");
-    }
-
-    return {
-      kind: "s3",
-      endpoint,
-      verify_ssl: config.verify_ssl ?? true,
-      access_key,
-      secret_key,
-      bucket: config.bucket,
-      key_prefix: config.key,
-    };
-  }
-
-  /**
-   * Check if an S3 config object uses user-friendly field names
-   */
-  private isUserFriendlyS3Config(config: Record<string, unknown>): boolean {
-    return (
-      config.kind === "s3" &&
-      ("region" in config ||
-        "access_key_id" in config ||
-        "secret_access_key" in config ||
-        !("endpoint" in config))
-    );
-  }
-
-  /**
-   * Map user-friendly S3Config to API S3Target format
-   */
-  private mapToApiS3Target(config: S3Config): ConversionTarget {
-    const region = config.region || process.env.AWS_REGION || "us-east-1";
-    const endpoint = config.endpoint || `s3.${region}.amazonaws.com`;
-    const access_key = config.access_key_id || process.env.AWS_ACCESS_KEY_ID;
-    const secret_key = config.secret_access_key || process.env.AWS_SECRET_ACCESS_KEY;
-
-    if (!access_key || !secret_key) {
-      throw new Error(
-        "AWS credentials are required. Provide access_key_id and secret_access_key or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
-      );
-    }
-
-    return {
-      kind: "s3",
-      endpoint,
-      verify_ssl: config.verify_ssl ?? true,
-      access_key,
-      secret_key,
-      bucket: config.bucket,
-      key_prefix: config.key || "",
-    };
   }
 
   /**
@@ -971,13 +940,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Prepare files for upload
    */
   private async prepareFiles(
-    files: File | File[] | Buffer | Buffer[],
+    files: File | File[] | Uint8Array | Uint8Array[],
     filename?: string | string[],
     fromFormats?: InputFormat[]
   ): Promise<
     Array<{
       name: string;
-      data: Buffer;
+      data: Uint8Array;
       filename?: string;
       contentType?: string;
     }>
@@ -996,7 +965,7 @@ export class DoclingAPIClient implements DoclingAPI {
 
     const preparedFiles = await Promise.all(
       fileArray.map(async (file, index) => {
-        if (Buffer.isBuffer(file)) {
+        if (isBinary(file)) {
           const fmt = fromFormats?.[0];
           const ext = pickExt(fmt);
           const ct = pickContentType(fmt);
@@ -1011,10 +980,10 @@ export class DoclingAPIClient implements DoclingAPI {
         }
 
         if (file && typeof file === "object" && "arrayBuffer" in file) {
-          const buffer = Buffer.from(await file.arrayBuffer());
+          const arrayBuffer = await file.arrayBuffer();
           return {
             name: "files",
-            data: buffer,
+            data: new Uint8Array(arrayBuffer),
             filename: (file as File).name,
             contentType: (file as File).type || "application/octet-stream",
           };
@@ -1150,7 +1119,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * @param progressOverride - Optional progress config to override client config
    */
   async convertWithAutoProgress(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {},
     progressOverride?: ProgressConfig
@@ -1161,7 +1130,7 @@ export class DoclingAPIClient implements DoclingAPI {
 
     if (!progressManager) {
       return this.convertFromBuffer(
-        typeof file === "string" ? Buffer.from(file) : file,
+        typeof file === "string" ? stringToUint8Array(file) : file,
         filename,
         options
       );
@@ -1169,7 +1138,7 @@ export class DoclingAPIClient implements DoclingAPI {
 
     try {
       const task = await this.convertFileAsync({
-        files: typeof file === "string" ? Buffer.from(file) : file,
+        files: typeof file === "string" ? stringToUint8Array(file) : file,
         ...this.config.defaultOptions,
         ...options,
       });
@@ -1209,12 +1178,13 @@ export class DoclingAPIClient implements DoclingAPI {
   /**
    * Convert to stream (API version of CLI convertToStream())
    * Streams the result directly to output stream
+   * Node.js only - requires Writable stream
    * @param returnAsZip - If true, returns ZIP file; if false, returns content directly
    */
   async convertToStream(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
-    outputStream: Writable,
+    outputStream: { write(chunk: string | Uint8Array): boolean; end(): void },
     options: ConversionOptions = {},
     returnAsZip = false
   ): Promise<{
@@ -1233,13 +1203,13 @@ export class DoclingAPIClient implements DoclingAPI {
    * Create stream request with proper structure
    */
   private createStreamRequest(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     returnAsZip: boolean
   ): ConvertDocumentsRequest {
-    const fileBuffer = typeof file === "string" ? Buffer.from(file) : file;
-    const base64Content = fileBuffer.toString("base64");
+    const fileBuffer = typeof file === "string" ? stringToUint8Array(file) : file;
+    const base64Content = uint8ArrayToBase64(fileBuffer);
 
     return {
       options: { ...this.config.defaultOptions, ...options },
@@ -1253,7 +1223,7 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   private async executeStreamRequest(
     request: ConvertDocumentsRequest,
-    outputStream: Writable,
+    outputStream: { write(chunk: string | Uint8Array): boolean; end(): void },
     returnAsZip: boolean
   ): Promise<{
     success: boolean;
@@ -1277,7 +1247,7 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   private async executeZipStreamRequest(
     request: ConvertDocumentsRequest,
-    outputStream: Writable
+    outputStream: { write(chunk: string | Uint8Array): boolean; end(): void }
   ): Promise<{
     success: boolean;
     error?: { message: string; details?: string };
@@ -1332,7 +1302,7 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   private async executeContentStreamRequest(
     request: ConvertDocumentsRequest,
-    outputStream: Writable
+    outputStream: { write(chunk: string | Uint8Array): boolean; end(): void }
   ): Promise<{
     success: boolean;
     error?: { message: string; details?: string };
@@ -1434,8 +1404,8 @@ export class DoclingAPIClient implements DoclingAPI {
 
     // Set up progress tracking
     if (onProgress) {
-      taskManager.on("status", (_, currentTaskId) => {
-        if (currentTaskId === taskId) {
+      taskManager.on("status", (statusData) => {
+        if (statusData.taskId === taskId) {
           const progress = Math.min(90, 30 + (pollCount / maxPolls) * 60);
           onProgress({
             stage: "processing",
@@ -1473,7 +1443,7 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   private async convertInputByType(
     file: {
-      buffer?: Buffer;
+      buffer?: Uint8Array;
       filePath?: string;
       stream?: NodeJS.ReadableStream;
       filename: string;
@@ -1546,10 +1516,11 @@ export class DoclingAPIClient implements DoclingAPI {
 
   /**
    * Handle file stream response for streaming
+   * Uses data events instead of pipe for better cross-runtime compatibility
    */
   private async handleFileStreamResponse(
     fileStream: NodeJS.ReadableStream,
-    outputStream: Writable
+    outputStream: { write(chunk: string | Uint8Array): boolean; end(): void }
   ): Promise<{
     success: boolean;
     error?: { message: string; details?: string };
@@ -1565,12 +1536,14 @@ export class DoclingAPIClient implements DoclingAPI {
         });
       });
 
+      fileStream.on("data", (chunk: Uint8Array | string) => {
+        outputStream.write(chunk);
+      });
+
       fileStream.on("end", () => {
         outputStream.end();
         resolve({ success: true });
       });
-
-      fileStream.pipe(outputStream, { end: false });
     });
   }
 
@@ -1580,48 +1553,50 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   private async handleDataStreamResponse(
     data: unknown,
-    outputStream: Writable
+    outputStream: { write(chunk: string | Uint8Array): boolean; end(): void }
   ): Promise<{ success: boolean }> {
-    let content: string;
+    const extractContent = (): string => {
+      if (data && typeof data === "object" && "document" in data) {
+        const document = (
+          data as {
+            document: {
+              md_content?: string;
+              html_content?: string;
+              text_content?: string;
+            };
+          }
+        ).document;
 
-    if (data && typeof data === "object" && "document" in data) {
-      const document = (
-        data as {
-          document: {
-            md_content?: string;
-            html_content?: string;
-            text_content?: string;
-          };
+        const contentExtractors = new Map([
+          ["md_content", () => document.md_content || ""],
+          ["html_content", () => document.html_content || ""],
+          ["text_content", () => document.text_content || ""],
+          ["default", () => JSON.stringify(document, null, 2)],
+        ]);
+
+        const contentType = document.md_content
+          ? "md_content"
+          : document.html_content
+            ? "html_content"
+            : document.text_content
+              ? "text_content"
+              : "default";
+
+        const extractor = contentExtractors.get(contentType);
+        if (!extractor) {
+          throw new Error(`Unknown content extractor: ${contentType}`);
         }
-      ).document;
-
-      const contentExtractors = new Map([
-        ["md_content", () => document.md_content || ""],
-        ["html_content", () => document.html_content || ""],
-        ["text_content", () => document.text_content || ""],
-        ["default", () => JSON.stringify(document, null, 2)],
-      ]);
-
-      const contentType = document.md_content
-        ? "md_content"
-        : document.html_content
-          ? "html_content"
-          : document.text_content
-            ? "text_content"
-            : "default";
-
-      const extractor = contentExtractors.get(contentType);
-      if (!extractor) {
-        throw new Error(`Unknown content extractor: ${contentType}`);
+        return extractor();
       }
-      content = extractor();
-    } else if (typeof data === "string") {
-      content = data;
-    } else {
-      content = JSON.stringify(data, null, 2);
-    }
 
-    outputStream.write(content);
+      if (typeof data === "string") {
+        return data;
+      }
+
+      return JSON.stringify(data, null, 2);
+    };
+
+    outputStream.write(extractContent());
     outputStream.end();
     return { success: true };
   }
@@ -1629,7 +1604,10 @@ export class DoclingAPIClient implements DoclingAPI {
   /**
    * Handle empty response case for streaming
    */
-  private async handleEmptyStreamResponse(outputStream: Writable): Promise<{
+  private async handleEmptyStreamResponse(outputStream: {
+    write(chunk: string | Uint8Array): boolean;
+    end(): void;
+  }): Promise<{
     success: boolean;
     error: { message: string; details: string };
   }> {
@@ -1648,7 +1626,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Enhanced progress monitoring for API uploads and conversions
    */
   async convertWithProgress(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {},
     onProgress?: (progress: {
@@ -1667,7 +1645,7 @@ export class DoclingAPIClient implements DoclingAPI {
         });
       }
 
-      if (Buffer.isBuffer(file) && file.length > 10 * 1024 * 1024) {
+      if (isBinary(file) && file.length > 10 * 1024 * 1024) {
         return this.convertWithAsyncProgress(file, filename, options, onProgress);
       }
 
@@ -1725,7 +1703,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Validates files before processing
    */
   async validateFiles(
-    files: Array<{ buffer?: Buffer; filePath?: string; filename: string }>
+    files: Array<{ buffer?: Uint8Array; filePath?: string; filename: string }>
   ): Promise<{
     valid: boolean;
     results: Array<{
@@ -1822,7 +1800,8 @@ export class DoclingAPIClient implements DoclingAPI {
           });
         });
 
-        this.ws.on("status", (status, taskId) => {
+        this.ws.on("status", (statusData) => {
+          const [status, taskId] = statusData;
           onProgress({
             stage: status === "success" ? "completed" : status,
             ...(status === "success" && { percentage: 100 }),
@@ -1856,7 +1835,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert file with WebSocket real-time updates
    */
   async convertFileWithWebSocket(
-    buffer: Buffer,
+    buffer: Uint8Array,
     filename: string,
     options: ConversionOptions = {},
     onProgress?: (progress: {
@@ -1933,7 +1912,8 @@ export class DoclingAPIClient implements DoclingAPI {
           });
         });
 
-        this.ws.on("status", (status, taskId) => {
+        this.ws.on("status", (statusData) => {
+          const [status, taskId] = statusData;
           onProgress({
             stage: status === "success" ? "completed" : status,
             ...(status === "success" && { percentage: 100 }),
@@ -2133,7 +2113,7 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   async convertMultipleFiles(
     files: Array<{
-      buffer?: Buffer;
+      buffer?: Uint8Array;
       filePath?: string;
       stream?: NodeJS.ReadableStream;
       filename: string;
@@ -2250,7 +2230,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Convert with async progress monitoring for large files
    */
   private async convertWithAsyncProgress(
-    file: Buffer,
+    file: Uint8Array,
     _filename: string,
     options: ConversionOptions,
     onProgress?: (progress: {
@@ -2318,7 +2298,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Safe convert method using Result pattern
    */
   async safeConvert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<SafeConversionResult> {
@@ -2331,7 +2311,7 @@ export class DoclingAPIClient implements DoclingAPI {
    * Safe convert to file method using Result pattern
    */
   async safeConvertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<SafeFileConversionResult> {

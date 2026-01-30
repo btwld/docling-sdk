@@ -188,7 +188,7 @@ export interface DoclingClientBase {
    * Convert document to various formats
    */
   convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -197,7 +197,7 @@ export interface DoclingClientBase {
    * Extract text content from document
    */
   extractText(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse>;
@@ -206,7 +206,7 @@ export interface DoclingClientBase {
    * Convert document to HTML format
    */
   toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse>;
@@ -215,7 +215,7 @@ export interface DoclingClientBase {
    * Convert document to Markdown format
    */
   toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse>;
@@ -224,7 +224,7 @@ export interface DoclingClientBase {
    * Convert document to multiple formats
    */
   convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -233,7 +233,7 @@ export interface DoclingClientBase {
    * Process document with advanced options
    */
   process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -242,7 +242,7 @@ export interface DoclingClientBase {
    * Convert document and return as downloadable files
    */
   convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConversionFileResult>;
@@ -251,7 +251,7 @@ export interface DoclingClientBase {
    * Safe convert method using Result pattern
    */
   safeConvert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<SafeConversionResult>;
@@ -260,7 +260,7 @@ export interface DoclingClientBase {
    * Safe convert to file method using Result pattern
    */
   safeConvertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<SafeFileConversionResult>;
@@ -285,7 +285,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert using SYNC endpoint (fast JSON responses)
    */
   convertSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -294,7 +294,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert using ASYNC endpoint (advanced workflows)
    */
   convertAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -322,42 +322,42 @@ export interface DoclingAPI extends DoclingClientBase {
    * Providing `progress` will enable hybrid/websocket/http tracking for this call
    */
   convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
@@ -440,7 +440,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert from buffer
    */
   convertFromBuffer(
-    buffer: Buffer,
+    buffer: Uint8Array,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -477,7 +477,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HybridChunker (SYNC endpoint)
    */
   chunkHybridSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -486,7 +486,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HierarchicalChunker (SYNC endpoint)
    */
   chunkHierarchicalSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -495,7 +495,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HybridChunker (ASYNC endpoint)
    */
   chunkHybridAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -504,7 +504,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HierarchicalChunker (ASYNC endpoint)
    */
   chunkHierarchicalAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;

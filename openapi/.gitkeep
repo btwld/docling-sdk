@@ -1,0 +1,10 @@
+# This directory contains the OpenAPI spec fetched from Docling Serve
+#
+# To fetch the spec:
+#   npm run openapi:fetch
+#
+# To generate types from the spec:
+#   npm run openapi:generate
+#
+# To do both in one command:
+#   npm run openapi:update
