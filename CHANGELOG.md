@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [2.0.1](https://github.com/btwld/docling-sdk/compare/v2.0.0...v2.0.1) (2026-02-09)
+
+### 🔧 Maintenance
+
+- chore: set version to 2.0.0 (#64) (7f906a5)
+- chore: update CHANGELOG.md for v3.0.0 [skip ci] (d0be141)
+- chore: bump version to 3.0.0 [skip ci] (449c720)
+
+
 ## [3.0.0](https://github.com/btwld/docling-sdk/compare/v2.0.0...v3.0.0) (2026-02-09)
 
 
