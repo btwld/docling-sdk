@@ -1,4 +1,5 @@
 import type { HttpClient } from "../api/http";
+import { stringToUint8Array } from "../platform/binary";
 import type {
   ConversionFileResult,
   ConversionOptions,
@@ -26,7 +27,7 @@ export class FileService {
    * For ZIP files, use convertToFile() instead
    */
   async convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
@@ -38,7 +39,7 @@ export class FileService {
    * Uses convert() internally with text format
    */
   async extractText(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {}
   ): Promise<ConvertDocumentResponse> {
@@ -53,7 +54,7 @@ export class FileService {
    * Uses convert() internally with HTML format
    */
   async toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {}
   ): Promise<ConvertDocumentResponse> {
@@ -68,7 +69,7 @@ export class FileService {
    * Uses convert() internally with Markdown format
    */
   async toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: Omit<ConversionOptions, "to_formats"> = {}
   ): Promise<ConvertDocumentResponse> {
@@ -83,7 +84,7 @@ export class FileService {
    * Uses convert() internally with specified formats
    */
   async convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConvertDocumentResponse> {
@@ -95,7 +96,7 @@ export class FileService {
    * Uses convert() internally with processing pipeline
    */
   async process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
@@ -111,12 +112,12 @@ export class FileService {
    * Perfect for ZIP downloads, batch processing, long-running tasks
    */
   async convertAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
     try {
-      const fileBuffer = await this.ensureBuffer(file);
+      const fileBuffer = await this.ensureUint8Array(file);
 
       const response = await this.http.streamUpload<TaskStatusResponse>(
         "/v1/convert/file/async",
@@ -181,7 +182,7 @@ export class FileService {
    * Uses async endpoint for proper ZIP file support
    */
   async convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConversionFileResult> {
@@ -194,11 +195,11 @@ export class FileService {
    * Perfect for quick JSON responses, text extraction, HTML conversion
    */
   async convertSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
-    const fileBuffer = await this.ensureBuffer(file);
+    const fileBuffer = await this.ensureUint8Array(file);
 
     const response = await this.http.streamUpload<ConvertDocumentResponse>(
       "/v1/convert/file",
@@ -223,12 +224,12 @@ export class FileService {
    * Perfect for ZIP file downloads, batch processing, file storage
    */
   async convertToFileAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConversionFileResult> {
     try {
-      const fileBuffer = await this.ensureBuffer(file);
+      const fileBuffer = await this.ensureUint8Array(file);
 
       const upload = await this.http.streamUpload<ConvertDocumentResponse>(
         "/v1/convert/file/async",
@@ -455,12 +456,27 @@ export class FileService {
   }
 
   /**
-   * Ensure input is a Buffer
+   * Ensure input is a Uint8Array
+   * If string is provided and looks like a file path, reads from file system (Node.js only)
+   * Otherwise treats string as UTF-8 content
    */
-  private async ensureBuffer(file: Buffer | string): Promise<Buffer> {
+  private async ensureUint8Array(file: Uint8Array | string): Promise<Uint8Array> {
     if (typeof file === "string") {
-      const fs = await import("node:fs/promises");
-      return fs.readFile(file);
+      // Check if it looks like a file path (contains path separator or common extensions)
+      const looksLikeFilePath =
+        file.includes("/") ||
+        file.includes("\\") ||
+        /\.(pdf|docx?|pptx?|xlsx?|txt|md|html?)$/i.test(file);
+
+      if (looksLikeFilePath) {
+        // Dynamic import for Node.js file system
+        const fs = await import("node:fs/promises");
+        const buffer = await fs.readFile(file);
+        return new Uint8Array(buffer);
+      }
+
+      // Treat as UTF-8 content
+      return stringToUint8Array(file);
     }
     return file;
   }

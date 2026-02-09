@@ -1,5 +1,11 @@
-import { EventEmitter } from "node:events";
+/**
+ * Async Task Manager with cross-runtime EventEmitter
+ * Handles async task submission, polling, and completion
+ * Reusable across API, CLI, and other contexts
+ */
+
 import type { HttpClient } from "../api/http";
+import { CrossEventEmitter } from "../platform/events";
 
 /**
  * Task status from the API
@@ -10,12 +16,13 @@ export type TaskStatus = "pending" | "started" | "success" | "failure" | "revoke
  * Task events that can be emitted
  */
 export interface TaskEvents {
-  status: (status: TaskStatus, taskId: string) => void;
-  progress: (progress: { stage: string; message?: string }, taskId: string) => void;
-  success: (taskId: string) => void;
-  failure: (error: string, taskId: string) => void;
-  timeout: (taskId: string) => void;
-  error: (error: Error, taskId: string) => void;
+  [key: string]: unknown;
+  status: { status: TaskStatus; taskId: string };
+  progress: { progress: { stage: string; message?: string }; taskId: string };
+  success: { taskId: string };
+  failure: { error: string; taskId: string };
+  timeout: { taskId: string };
+  error: { error: Error; taskId: string };
 }
 
 /**
@@ -50,23 +57,27 @@ export interface TaskResult<T = unknown> {
 }
 
 /**
+ * Active task state
+ */
+interface ActiveTask {
+  startTime: number;
+  options: Required<TaskOptions>;
+  pollTimer?: ReturnType<typeof globalThis.setTimeout>;
+  timeoutTimer?: ReturnType<typeof globalThis.setTimeout>;
+}
+
+/**
  * Async Task Manager with EventEmitter
  * Handles async task submission, polling, and completion
  * Reusable across API, CLI, and other contexts
  */
-export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskManager {
-  private activeTasks = new Map<
-    string,
-    {
-      startTime: number;
-      options: TaskOptions;
-      pollTimer?: NodeJS.Timeout;
-      timeoutTimer?: NodeJS.Timeout;
-    }
-  >();
+export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
+  private activeTasks = new Map<string, ActiveTask>();
+  private http: HttpClient;
 
-  constructor(private http: HttpClient) {
+  constructor(http: HttpClient) {
     super();
+    this.http = http;
   }
 
   /**
@@ -78,13 +89,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
     parameters: Record<string, unknown>,
     options: TaskOptions = {}
   ): Promise<string> {
-    const taskOptions: Required<TaskOptions> = {
-      timeout: options.timeout || 300000,
-      pollInterval: options.pollInterval || 2000,
-      maxPolls: options.maxPolls || 150,
-      waitSeconds: options.waitSeconds || 100,
-      pollingRetries: options.pollingRetries || 5,
-    };
+    const taskOptions = this.normalizeOptions(options);
 
     try {
       const response = await this.http.post<{ task_id: string }>(
@@ -100,27 +105,23 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
       });
 
       this.startPolling(taskId);
-
       this.setTaskTimeout(taskId);
 
-      this.emit("status", "pending", taskId);
+      this.emit("status", { status: "pending", taskId });
 
       return taskId;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error));
-      this.emit("error", errorObj, "unknown");
+      this.emit("error", { error: errorObj, taskId: "unknown" });
       throw errorObj;
     }
   }
 
+  /**
+   * Start polling for an existing task
+   */
   startPollingExistingTask(taskId: string, options: TaskOptions = {}): void {
-    const taskOptions: Required<TaskOptions> = {
-      timeout: options.timeout || 300000,
-      pollInterval: options.pollInterval || 2000,
-      maxPolls: options.maxPolls || 150,
-      waitSeconds: options.waitSeconds || 100,
-      pollingRetries: options.pollingRetries || 5,
-    };
+    const taskOptions = this.normalizeOptions(options);
 
     if (!this.activeTasks.has(taskId)) {
       this.activeTasks.set(taskId, {
@@ -130,7 +131,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
       this.startPolling(taskId);
       this.setTaskTimeout(taskId);
-      this.emit("status", "pending", taskId);
+      this.emit("status", { status: "pending", taskId });
     }
   }
 
@@ -140,8 +141,8 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
    */
   async waitForCompletion<T = unknown>(taskId: string): Promise<TaskResult<T>> {
     return new Promise((resolve) => {
-      const handleCompletion = (completedTaskId: string) => {
-        if (completedTaskId !== taskId) return;
+      const handleCompletion = (event: TaskEvents["success"]) => {
+        if (event.taskId !== taskId) return;
 
         const task = this.activeTasks.get(taskId);
         if (!task) {
@@ -166,8 +167,8 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
         });
       };
 
-      const handleFailure = (error: string, failedTaskId: string) => {
-        if (failedTaskId !== taskId) return;
+      const handleFailure = (event: TaskEvents["failure"]) => {
+        if (event.taskId !== taskId) return;
 
         const task = this.activeTasks.get(taskId);
         const duration = task ? Date.now() - task.startTime : 0;
@@ -175,15 +176,15 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
         resolve({
           success: false,
-          error: { message: error },
+          error: { message: event.error },
           taskId,
           finalStatus: "failure",
           duration,
         });
       };
 
-      const handleTimeout = (timeoutTaskId: string) => {
-        if (timeoutTaskId !== taskId) return;
+      const handleTimeout = (event: TaskEvents["timeout"]) => {
+        if (event.taskId !== taskId) return;
 
         const task = this.activeTasks.get(taskId);
         const duration = task ? Date.now() - task.startTime : 0;
@@ -198,8 +199,8 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
         });
       };
 
-      const handleError = (error: Error, errorTaskId: string) => {
-        if (errorTaskId !== taskId) return;
+      const handleError = (event: TaskEvents["error"]) => {
+        if (event.taskId !== taskId) return;
 
         const task = this.activeTasks.get(taskId);
         const duration = task ? Date.now() - task.startTime : 0;
@@ -207,7 +208,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
 
         resolve({
           success: false,
-          error: { message: error.message, details: error },
+          error: { message: event.error.message, details: event.error },
           taskId,
           finalStatus: "failure",
           duration,
@@ -234,7 +235,7 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
    */
   async cancelTask(taskId: string): Promise<void> {
     this.cleanup(taskId);
-    this.emit("failure", "Task cancelled", taskId);
+    this.emit("failure", { error: "Task cancelled", taskId });
   }
 
   /**
@@ -259,6 +260,31 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
   }
 
   /**
+   * Clean up all tasks (for shutdown)
+   */
+  destroy(): void {
+    for (const taskId of this.activeTasks.keys()) {
+      this.cleanup(taskId);
+    }
+    this.removeAllListeners();
+  }
+
+  // Private methods
+
+  /**
+   * Normalize task options with defaults
+   */
+  private normalizeOptions(options: TaskOptions): Required<TaskOptions> {
+    return {
+      timeout: options.timeout || 300000,
+      pollInterval: options.pollInterval || 2000,
+      maxPolls: options.maxPolls || 150,
+      waitSeconds: options.waitSeconds || 100,
+      pollingRetries: options.pollingRetries || 5,
+    };
+  }
+
+  /**
    * Start polling for task status
    */
   private startPolling(taskId: string): void {
@@ -272,14 +298,14 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
       try {
         pollCount++;
 
-        const maxPolls = task.options.maxPolls ?? 60;
+        const maxPolls = task.options.maxPolls;
         if (pollCount > maxPolls) {
-          this.emit("timeout", taskId);
+          this.emit("timeout", { taskId });
           return;
         }
 
         const requestStart = Date.now();
-        const waitSeconds = task.options.waitSeconds ?? 100;
+        const waitSeconds = task.options.waitSeconds;
 
         const response = await this.http.getJson<{ task_status: TaskStatus }>(
           `/v1/status/poll/${taskId}?wait=${waitSeconds}`
@@ -289,31 +315,29 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
         consecutiveFailures = 0;
 
         const status = response.data.task_status;
-        this.emit("status", status, taskId);
+        this.emit("status", { status, taskId });
 
         if (status === "success") {
-          this.emit("success", taskId);
+          this.emit("success", { taskId });
           return;
         }
 
         if (status === "failure" || status === "revoked") {
-          this.emit("failure", `Task ${status}`, taskId);
+          this.emit("failure", { error: `Task ${status}`, taskId });
           return;
         }
 
         const requestDuration = Date.now() - requestStart;
         const delay =
-          requestDuration < 5000
-            ? Math.min(task.options.pollInterval ?? 2000, waitSeconds * 1000)
-            : 1000; // Minimal delay if server did proper long polling
+          requestDuration < 5000 ? Math.min(task.options.pollInterval, waitSeconds * 1000) : 1000; // Minimal delay if server did proper long polling
 
-        task.pollTimer = setTimeout(poll, delay);
+        task.pollTimer = globalThis.setTimeout(poll, delay);
       } catch (error) {
         consecutiveFailures++;
-        const maxRetries = task.options.pollingRetries ?? 5;
+        const maxRetries = task.options.pollingRetries;
 
         console.warn(
-          `⚠️  AsyncTaskManager polling failed for task ${taskId} (${consecutiveFailures}/${maxRetries}):`,
+          `AsyncTaskManager polling failed for task ${taskId} (${consecutiveFailures}/${maxRetries}):`,
           error instanceof Error ? error.message : String(error)
         );
 
@@ -323,18 +347,18 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
               error instanceof Error ? error.message : String(error)
             }`
           );
-          this.emit("error", errorObj, taskId);
+          this.emit("error", { error: errorObj, taskId });
           return;
         }
 
         const retryDelay = Math.min(2000 * 2 ** (consecutiveFailures - 1), 32000);
-        console.log(`🔄 AsyncTaskManager retrying task ${taskId} in ${retryDelay}ms...`);
+        console.log(`Retrying task ${taskId} in ${retryDelay}ms...`);
 
-        task.pollTimer = setTimeout(poll, retryDelay);
+        task.pollTimer = globalThis.setTimeout(poll, retryDelay);
       }
     };
 
-    task.pollTimer = setTimeout(poll, 1000);
+    task.pollTimer = globalThis.setTimeout(poll, 1000);
   }
 
   /**
@@ -344,8 +368,8 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
     const task = this.activeTasks.get(taskId);
     if (!task) return;
 
-    task.timeoutTimer = setTimeout(() => {
-      this.emit("timeout", taskId);
+    task.timeoutTimer = globalThis.setTimeout(() => {
+      this.emit("timeout", { taskId });
     }, task.options.timeout);
   }
 
@@ -357,33 +381,24 @@ export class AsyncTaskManager extends EventEmitter implements TypedAsyncTaskMana
     if (!task) return;
 
     if (task.pollTimer) {
-      clearTimeout(task.pollTimer);
+      globalThis.clearTimeout(task.pollTimer);
     }
 
     if (task.timeoutTimer) {
-      clearTimeout(task.timeoutTimer);
+      globalThis.clearTimeout(task.timeoutTimer);
     }
 
     this.activeTasks.delete(taskId);
-  }
-
-  /**
-   * Clean up all tasks (for shutdown)
-   */
-  destroy(): void {
-    for (const taskId of this.activeTasks.keys()) {
-      this.cleanup(taskId);
-    }
-    this.removeAllListeners();
   }
 }
 
 /**
  * Typed EventEmitter interface for better TypeScript support
+ * @deprecated Use CrossEventEmitter<TaskEvents> directly
  */
 export interface TypedAsyncTaskManager {
-  on<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
-  emit<K extends keyof TaskEvents>(event: K, ...args: Parameters<TaskEvents[K]>): boolean;
-  once<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
-  off<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): this;
+  on<K extends keyof TaskEvents>(event: K, listener: (data: TaskEvents[K]) => void): this;
+  emit<K extends keyof TaskEvents>(event: K, data: TaskEvents[K]): this;
+  once<K extends keyof TaskEvents>(event: K, listener: (data: TaskEvents[K]) => void): this;
+  off<K extends keyof TaskEvents>(event: K, listener: (data: TaskEvents[K]) => void): this;
 }

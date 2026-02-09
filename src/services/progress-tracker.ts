@@ -1,8 +1,23 @@
-import { EventEmitter } from "node:events";
-import { setTimeout as delay } from "node:timers/promises";
+/**
+ * Progress tracker that combines WebSocket and HTTP polling
+ * Uses cross-runtime event emitter and timers
+ */
+
 import type { HttpClient } from "../api/http";
 import { DoclingWebSocketClient } from "../clients/websocket-client";
+import { CrossEventEmitter } from "../platform/events";
+import { delay } from "../platform/timers";
 import type { ProgressConfig, ProgressUpdate } from "../types/client";
+
+/**
+ * Progress events that can be emitted
+ */
+export interface ProgressEvents {
+  [key: string]: unknown;
+  progress: ProgressUpdate;
+  complete: unknown;
+  error: Error;
+}
 
 /**
  * No-operation function for default callbacks
@@ -15,11 +30,11 @@ function noop(): void {
  * Progress tracker that combines WebSocket and HTTP polling
  * Always tries WebSocket first, falls back to HTTP polling if needed
  */
-export class ProgressTracker extends EventEmitter {
+export class ProgressTracker extends CrossEventEmitter<ProgressEvents> {
   private config: Required<ProgressConfig>;
   private wsClient: DoclingWebSocketClient | null = null;
   private httpClient: HttpClient;
-  private pollTimer: NodeJS.Timeout | null = null;
+  private pollTimer: ReturnType<typeof globalThis.setInterval> | null = null;
   private isActive = false;
   private currentTaskId: string | null = null;
   private lastProgressTime = 0;
@@ -84,7 +99,7 @@ export class ProgressTracker extends EventEmitter {
     this.isActive = false;
 
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      globalThis.clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
 
@@ -113,7 +128,8 @@ export class ProgressTracker extends EventEmitter {
       });
     });
 
-    this.wsClient.on("status", (status, receivedTaskId) => {
+    this.wsClient.on("status", (statusData: [string, string]) => {
+      const [status, receivedTaskId] = statusData;
       if (receivedTaskId === taskId) {
         this.handleProgress({
           stage: status === "success" ? "completed" : status,
@@ -150,10 +166,10 @@ export class ProgressTracker extends EventEmitter {
   /** Start HTTP polling */
   private startHttpPolling(taskId: string): void {
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      globalThis.clearInterval(this.pollTimer);
     }
 
-    this.pollTimer = setInterval(async () => {
+    this.pollTimer = globalThis.setInterval(async () => {
       if (!this.isActive || this.currentTaskId !== taskId) {
         return;
       }
@@ -187,7 +203,7 @@ export class ProgressTracker extends EventEmitter {
     }, this.config.httpPollInterval);
   }
 
-  /** Setup WebSocket timeout using timers/promises */
+  /** Setup WebSocket timeout using cross-runtime delay */
   private async setupWebSocketTimeout(taskId: string): Promise<void> {
     await delay(this.config.websocketTimeout);
 
@@ -215,6 +231,7 @@ export class ProgressTracker extends EventEmitter {
           : null;
 
         await this.config.onComplete(result?.data || { success: true });
+        this.emit("complete", result?.data || { success: true });
       }
     } catch (error) {
       console.error("Error in completion callback:", error);
@@ -226,6 +243,7 @@ export class ProgressTracker extends EventEmitter {
   private async handleError(error: Error): Promise<void> {
     try {
       await this.config.onError(error);
+      this.emit("error", error);
     } catch (callbackError) {
       console.error("Error in error callback:", callbackError);
     } finally {

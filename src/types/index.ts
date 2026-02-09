@@ -1,6 +1,12 @@
 export * from "./docling-core";
 export * from "./api";
 export * from "./cli";
+
+// Generated types from OpenAPI spec (exported as namespace to avoid conflicts)
+export type { OpenAPI, paths, components, operations } from "./generated";
+
+// Type adapters for transforming between SDK and OpenAPI formats
+export * from "./adapters";
 export interface DoclingClientConfig {
   cli?: {
     doclingPath?: string;

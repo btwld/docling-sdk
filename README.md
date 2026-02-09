@@ -8,6 +8,7 @@ Docling SDK provides a comprehensive TypeScript interface for:
 
 - **Docling CLI**: Wrapper around the Python CLI with full TypeScript support
 - **Docling Serve API**: HTTP client for the docling-serve REST API
+- **Web OCR**: In-browser OCR using IBM Granite Docling model via WebGPU/WASM
 - **Real-time Processing**: WebSocket support for async operations
 - **Type Safety**: Full TypeScript types for all Docling data structures
 
@@ -15,6 +16,7 @@ Docling SDK provides a comprehensive TypeScript interface for:
 
 - 🔧 **CLI Integration**: Execute Docling CLI commands from TypeScript
 - 🌐 **API Client**: Full-featured HTTP client for docling-serve
+- 🧠 **Web OCR**: In-browser OCR via Granite Docling model (WebGPU/WASM) - no server required
 - 📡 **WebSocket Support**: Real-time task monitoring and progress updates
 - 📁 **File Processing**: Support for file uploads and batch processing
 - 🎯 **Multiple Formats**: PDF, DOCX, PPTX, HTML, Images, CSV, XML, JSON, Audio, and more
@@ -194,6 +196,102 @@ const result = await task.waitForCompletion();
 const finalChunks = await task.getResult();
 ```
 
+### Web OCR (Browser - No Server Required)
+
+Run OCR entirely in the browser using the IBM Granite Docling 258M model via WebGPU/WASM:
+
+```typescript
+import { createWebClient } from "docling-sdk/web";
+import type { WebOCRResult } from "docling-sdk/web";
+
+const client = createWebClient({ device: "webgpu" });
+
+// Load model (~500MB, cached in IndexedDB after first download)
+client.on("loading", ({ progress, status }) => {
+  console.log(`Loading: ${Math.round(progress * 100)}% - ${status}`);
+});
+
+await client.initialize();
+
+// Process an image (accepts File, Blob, HTMLCanvasElement, HTMLImageElement, etc.)
+client.on("stream", ({ chunk }) => process.stdout.write(chunk));
+
+const result: WebOCRResult = await client.processImage(file);
+
+console.log(result.markdown);   // Converted Markdown
+console.log(result.html);       // Converted HTML
+console.log(result.plainText);  // Plain text
+console.log(result.json);       // Structured DoclingDocument
+console.log(result.tables);     // Extracted tables: { headers, rows }[]
+console.log(result.overlays);   // Bounding boxes: { tagType, bbox }[]
+console.log(result.raw);        // Raw DocTags markup
+
+// Cleanup
+client.destroy();
+```
+
+> **Try it**: `npm run examples:web-ocr` launches a full demo app at http://localhost:5173
+
+#### Web Client API Reference
+
+```typescript
+// Factory
+createWebClient(options?: {
+  device?: "webgpu" | "wasm" | "auto";   // default: "webgpu"
+  modelId?: string;                       // default: "onnx-community/granite-docling-258M-ONNX"
+  maxNewTokens?: number;                  // default: 4096
+  workerUrl?: string;                     // custom worker URL
+  wasmPaths?: Record<string, string>;     // custom WASM paths
+}): DoclingWebClient;
+
+// Lifecycle
+client.ready: boolean;                    // true after initialize()
+client.processing: boolean;              // true during processImage()
+client.initialize(): Promise<void>;       // download & load model
+client.destroy(): void;                   // terminate worker
+
+// Image OCR
+client.processImage(
+  input: File | Blob | string | HTMLCanvasElement | HTMLImageElement | ImageBitmap | OffscreenCanvas,
+  options?: { maxNewTokens?: number }
+): Promise<WebOCRResult>;
+
+// DoclingClientBase (file conversion - also works with PDF via unpdf)
+client.convert(file, filename, options?): Promise<ConvertDocumentResponse>;
+client.toMarkdown(file, filename, options?): Promise<ConvertDocumentResponse>;
+client.toHtml(file, filename, options?): Promise<ConvertDocumentResponse>;
+client.extractText(file, filename, options?): Promise<ConvertDocumentResponse>;
+
+// Events
+client.on("loading",  (data: { progress: number; status: string }) => void);
+client.on("ready",    () => void);
+client.on("status",   (data: { status: string }) => void);
+client.on("stream",   (data: { chunk: string; progress: number }) => void);
+client.on("complete", (data: WebOCRResult) => void);
+client.on("error",    (data: { message: string; code?: string }) => void);
+
+// Cache
+client.clearCache(): Promise<boolean>;
+client.getCacheSize(): Promise<number>;
+```
+
+#### Standalone Utilities
+
+```typescript
+import {
+  doclingToHtml, doclingToMarkdown, doclingToPlainText, doclingToJson,
+  extractTables, tableToCSV, extractOverlays,
+  clearModelCache, getModelCacheSize,
+  renderPdfToImages,          // requires `unpdf` peer dep
+} from "docling-sdk/web";
+```
+
+#### Peer Dependencies (Web)
+
+```bash
+npm install @huggingface/transformers onnxruntime-web
+```
+
 ## Examples (simple → advanced)
 
 - 01-basic-api.ts: Basic API usage (health, sync inbody, async ZIP, convertToFile)
@@ -204,6 +302,7 @@ const finalChunks = await task.getResult();
 - 05-chunking-quickstart.ts: Quick start guide for document chunking
 - 05-s3-integration.ts: S3 source reading and target uploading
 - 06-typescript-types.ts: TypeScript type usage and validation
+- web-ocr/: Browser-based OCR demo app (Vite + vanilla TypeScript)
 
 Run examples
 
@@ -216,6 +315,7 @@ Run examples
 - npx tsx examples/05-chunking-quickstart.ts
 - npx tsx examples/05-s3-integration.ts
 - npx tsx examples/06-typescript-types.ts
+- npm run examples:web-ocr (opens browser demo at http://localhost:5173)
 
 ## Advanced Features
 

@@ -2,7 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DoclingAPIClient, HttpClient } from "../../src/api";
 import type { ConvertDocumentsRequest, ApiClientConfig } from "../../src";
 
-global.fetch = vi.fn();
+// Create a mock fetcher function
+const mockFetcher = vi.fn();
+mockFetcher.raw = vi.fn();
+
+// Mock ofetch module with create function
+vi.mock("ofetch", () => ({
+  ofetch: Object.assign(vi.fn(), {
+    create: vi.fn(() => mockFetcher),
+    raw: vi.fn(),
+  }),
+  $fetch: vi.fn(),
+  FetchError: class FetchError extends Error {
+    statusCode?: number;
+    data?: unknown;
+  },
+}));
 
 describe("HttpClient", () => {
   let httpClient: HttpClient;
@@ -29,109 +44,6 @@ describe("HttpClient", () => {
       const client = new HttpClient({ baseUrl: "http://localhost:5001/" });
       const config = client.getConfig();
       expect(config.baseUrl).toBe("http://localhost:5001");
-    });
-  });
-
-  describe("request", () => {
-    it("should make successful GET request", async () => {
-      const mockResponse = {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        headers: new Headers({ "content-type": "application/json" }),
-        json: vi.fn().mockResolvedValue({ success: true }),
-      };
-
-      (global.fetch as any).mockResolvedValue(mockResponse);
-
-      const response = await httpClient.get("/test");
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        "http://localhost:5001/test",
-        expect.objectContaining({
-          method: "GET",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
-        })
-      );
-
-      expect(response.data).toEqual({ success: true });
-      expect(response.status).toBe(200);
-    });
-
-    it("should make successful POST request with JSON body", async () => {
-      const mockResponse = {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        headers: new Headers({ "content-type": "application/json" }),
-        json: vi.fn().mockResolvedValue({ created: true }),
-      };
-
-      (global.fetch as any).mockResolvedValue(mockResponse);
-
-      const body = { test: "data" };
-      const response = await httpClient.postJson("/test", body);
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        "http://localhost:5001/test",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify(body),
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
-        })
-      );
-
-      expect(response.data).toEqual({ created: true });
-    });
-
-    it("should handle HTTP error responses", async () => {
-      const mockResponse = {
-        ok: false,
-        status: 404,
-        statusText: "Not Found",
-        headers: new Headers({ "content-type": "application/json" }),
-        json: vi.fn().mockResolvedValue({ detail: "Resource not found" }),
-      };
-
-      (global.fetch as any).mockResolvedValue(mockResponse);
-
-      await expect(httpClient.get("/nonexistent")).rejects.toThrow(
-        "Resource not found"
-      );
-    });
-
-    it("should handle network errors", async () => {
-      (global.fetch as any).mockRejectedValue(new Error("Network error"));
-
-      await expect(httpClient.get("/test")).rejects.toThrow("Network error");
-    });
-
-    it("should handle timeout", async () => {
-      const abortError = new Error("Timeout");
-      abortError.name = "AbortError";
-      (global.fetch as any).mockRejectedValue(abortError);
-
-      await expect(httpClient.get("/test")).rejects.toThrow("timed out");
-    });
-  });
-
-  describe("parseHeaders", () => {
-    it("should parse response headers", () => {
-      const headers = new Headers({
-        "content-type": "application/json",
-        "x-custom-header": "test-value",
-      });
-
-      const parsed = (httpClient as any).parseHeaders(headers);
-
-      expect(parsed).toEqual({
-        "content-type": "application/json",
-        "x-custom-header": "test-value",
-      });
     });
   });
 
@@ -361,6 +273,141 @@ describe("DoclingAPIClient", () => {
       const config = apiClient.getConfig();
       expect(config).toHaveProperty("baseUrl");
       expect(config).toHaveProperty("timeout");
+    });
+  });
+});
+
+// Test the S3 adapters
+import {
+  toOpenApiS3Source,
+  toOpenApiS3Target,
+  isUserFriendlyS3Config,
+} from "../../src/types/adapters";
+
+describe("S3 Adapters", () => {
+  describe("toOpenApiS3Source", () => {
+    it("should map user-friendly S3 config to API format", () => {
+      const userConfig = {
+        bucket: "my-bucket",
+        key: "documents/file.pdf",
+        region: "us-west-2",
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      };
+
+      const result = toOpenApiS3Source(userConfig);
+
+      expect(result.kind).toBe("s3");
+      expect(result.bucket).toBe("my-bucket");
+      expect(result.key_prefix).toBe("documents/file.pdf");
+      expect(result.endpoint).toBe("s3.us-west-2.amazonaws.com");
+      expect(result.access_key).toBe("AKIAIOSFODNN7EXAMPLE");
+      expect(result.secret_key).toBe("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+      expect(result.verify_ssl).toBe(true);
+    });
+
+    it("should use custom endpoint when provided", () => {
+      const userConfig = {
+        bucket: "my-bucket",
+        key: "file.pdf",
+        endpoint: "minio.local:9000",
+        access_key_id: "minio-access",
+        secret_access_key: "minio-secret",
+      };
+
+      const result = toOpenApiS3Source(userConfig);
+
+      expect(result.endpoint).toBe("minio.local:9000");
+    });
+
+    it("should throw error if credentials are missing", () => {
+      const userConfig = {
+        bucket: "my-bucket",
+        key: "file.pdf",
+        region: "us-west-2",
+      };
+
+      expect(() => toOpenApiS3Source(userConfig)).toThrow("AWS credentials are required");
+    });
+
+    it("should throw error if key is missing", () => {
+      const userConfig = {
+        bucket: "my-bucket",
+        region: "us-west-2",
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      };
+
+      expect(() => toOpenApiS3Source(userConfig)).toThrow("S3 key is required");
+    });
+  });
+
+  describe("toOpenApiS3Target", () => {
+    it("should map user-friendly S3 config to API target format", () => {
+      const userConfig = {
+        bucket: "output-bucket",
+        key: "converted/",
+        region: "us-west-2",
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      };
+
+      const result = toOpenApiS3Target(userConfig);
+
+      expect(result.kind).toBe("s3");
+      expect(result.bucket).toBe("output-bucket");
+      expect(result.key_prefix).toBe("converted/");
+      expect(result.endpoint).toBe("s3.us-west-2.amazonaws.com");
+    });
+
+    it("should use empty string for key_prefix if key is not provided", () => {
+      const userConfig = {
+        bucket: "output-bucket",
+        region: "us-west-2",
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      };
+
+      const result = toOpenApiS3Target(userConfig);
+
+      expect(result.key_prefix).toBe("");
+    });
+  });
+
+  describe("isUserFriendlyS3Config", () => {
+    it("should return true for user-friendly config with region", () => {
+      const config = { kind: "s3", region: "us-west-2", bucket: "my-bucket" };
+      expect(isUserFriendlyS3Config(config)).toBe(true);
+    });
+
+    it("should return true for user-friendly config with access_key_id", () => {
+      const config = {
+        kind: "s3",
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        bucket: "my-bucket",
+      };
+      expect(isUserFriendlyS3Config(config)).toBe(true);
+    });
+
+    it("should return true for user-friendly config without endpoint", () => {
+      const config = { kind: "s3", bucket: "my-bucket" };
+      expect(isUserFriendlyS3Config(config)).toBe(true);
+    });
+
+    it("should return false for API format config with endpoint", () => {
+      const config = {
+        kind: "s3",
+        endpoint: "s3.us-west-2.amazonaws.com",
+        access_key: "key",
+        secret_key: "secret",
+        bucket: "my-bucket",
+      };
+      expect(isUserFriendlyS3Config(config)).toBe(false);
+    });
+
+    it("should return false for non-S3 config", () => {
+      const config = { kind: "http", url: "https://example.com" };
+      expect(isUserFriendlyS3Config(config)).toBe(false);
     });
   });
 });

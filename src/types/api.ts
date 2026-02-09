@@ -493,7 +493,7 @@ export interface ProgressCallbackResponse {
  * File upload parameters for multipart form data
  */
 export interface FileUploadParams extends ConversionOptions {
-  files: File | File[] | Buffer | Buffer[];
+  files: File | File[] | Uint8Array | Uint8Array[];
   filename?: string | string[];
 }
 
@@ -501,7 +501,7 @@ export interface FileUploadParams extends ConversionOptions {
  * Chunk file upload parameters for multipart form data
  */
 export interface ChunkFileUploadParams extends ConversionOptions {
-  files: File | File[] | Buffer | Buffer[];
+  files: File | File[] | Uint8Array | Uint8Array[];
   filename?: string | string[];
   include_converted_doc?: boolean;
   target_type?: "inbody" | "zip";
@@ -637,7 +637,10 @@ export function createFailureResult(error: ProcessingError, taskId?: string): Co
  */
 export interface ConversionFileResult {
   success: boolean;
+  /** Node.js readable stream (only available in Node.js runtime) */
   fileStream?: NodeReadable;
+  /** Raw binary data (available in browser/Deno/Bun when fileStream is not available) */
+  data?: Uint8Array;
   fileMetadata?: {
     filename: string;
     contentType: string;

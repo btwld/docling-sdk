@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
 import type { HttpClient } from "../api/http";
+import { isBinary, stringToUint8Array } from "../platform/binary";
 import type {
   AsyncChunkTask,
   ChunkDocumentResponse,
@@ -16,6 +16,27 @@ import { AsyncTaskManager } from "./async-task-manager";
  * Provides clean separation of concerns for chunk-related functionality
  */
 export class ChunkService {
+  private static readonly CONTENT_TYPE_BY_EXT: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    html: "text/html",
+    htm: "text/html",
+    md: "text/markdown",
+    txt: "text/plain",
+    csv: "text/csv",
+    xml: "application/xml",
+    json: "application/json",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    tiff: "image/tiff",
+    tif: "image/tiff",
+  };
+
   private taskManager: AsyncTaskManager;
 
   constructor(private http: HttpClient) {
@@ -28,11 +49,11 @@ export class ChunkService {
    * Perfect for quick JSON responses with chunks
    */
   async chunkHybridSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ChunkDocumentResponse> {
-    const fileBuffer = await this.ensureBuffer(file);
+    const fileBuffer = await this.ensureUint8Array(file);
 
     const response = await this.http.streamUpload<ChunkDocumentResponse>(
       "/v1/chunk/hybrid/file",
@@ -57,11 +78,11 @@ export class ChunkService {
    * Perfect for quick JSON responses with chunks
    */
   async chunkHierarchicalSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ChunkDocumentResponse> {
-    const fileBuffer = await this.ensureBuffer(file);
+    const fileBuffer = await this.ensureUint8Array(file);
 
     const response = await this.http.streamUpload<ChunkDocumentResponse>(
       "/v1/chunk/hierarchical/file",
@@ -86,12 +107,12 @@ export class ChunkService {
    * Perfect for ZIP downloads, batch processing, long-running tasks
    */
   async chunkHybridAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ChunkDocumentResponse> {
     try {
-      const fileBuffer = await this.ensureBuffer(file);
+      const fileBuffer = await this.ensureUint8Array(file);
 
       const response = await this.http.streamUpload<TaskStatusResponse>(
         "/v1/chunk/hybrid/file/async",
@@ -145,12 +166,12 @@ export class ChunkService {
    * Perfect for ZIP downloads, batch processing, long-running tasks
    */
   async chunkHierarchicalAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ChunkDocumentResponse> {
     try {
-      const fileBuffer = await this.ensureBuffer(file);
+      const fileBuffer = await this.ensureUint8Array(file);
 
       const response = await this.http.streamUpload<TaskStatusResponse>(
         "/v1/chunk/hierarchical/file/async",
@@ -208,13 +229,16 @@ export class ChunkService {
       ? params.filename
       : [params.filename || "document"];
 
-    const uploadFiles = files.map((file, index) => ({
-      name: "files",
-      data: Buffer.isBuffer(file) ? file : Buffer.from(file as unknown as string),
-      filename: filenames[index] || `document-${index}`,
-      contentType: this.getContentType(filenames[index] || "document"),
-      size: Buffer.isBuffer(file) ? file.length : Buffer.from(file as unknown as string).length,
-    }));
+    const uploadFiles = files.map((file, index) => {
+      const data = isBinary(file) ? file : stringToUint8Array(file as unknown as string);
+      return {
+        name: "files",
+        data,
+        filename: filenames[index] || `document-${index}`,
+        contentType: this.getContentType(filenames[index] || "document"),
+        size: data.length,
+      };
+    });
 
     const response = await this.http.streamUpload<TaskStatusResponse>(
       "/v1/chunk/hybrid/file/async",
@@ -236,13 +260,16 @@ export class ChunkService {
       ? params.filename
       : [params.filename || "document"];
 
-    const uploadFiles = files.map((file, index) => ({
-      name: "files",
-      data: Buffer.isBuffer(file) ? file : Buffer.from(file as unknown as string),
-      filename: filenames[index] || `document-${index}`,
-      contentType: this.getContentType(filenames[index] || "document"),
-      size: Buffer.isBuffer(file) ? file.length : Buffer.from(file as unknown as string).length,
-    }));
+    const uploadFiles = files.map((file, index) => {
+      const data = isBinary(file) ? file : stringToUint8Array(file as unknown as string);
+      return {
+        name: "files",
+        data,
+        filename: filenames[index] || `document-${index}`,
+        contentType: this.getContentType(filenames[index] || "document"),
+        size: data.length,
+      };
+    });
 
     const response = await this.http.streamUpload<TaskStatusResponse>(
       "/v1/chunk/hierarchical/file/async",
@@ -456,12 +483,27 @@ export class ChunkService {
   }
 
   /**
-   * Ensure input is a Buffer
-   * Converts file path strings to Buffer by reading the file
+   * Ensure input is a Uint8Array
+   * If string is provided and looks like a file path, reads from file system (Node.js only)
+   * Otherwise treats string as UTF-8 content
    */
-  private async ensureBuffer(file: Buffer | string): Promise<Buffer> {
+  private async ensureUint8Array(file: Uint8Array | string): Promise<Uint8Array> {
     if (typeof file === "string") {
-      return readFile(file);
+      // Check if it looks like a file path (contains path separator or common extensions)
+      const looksLikeFilePath =
+        file.includes("/") ||
+        file.includes("\\") ||
+        /\.(pdf|docx?|pptx?|xlsx?|txt|md|html?)$/i.test(file);
+
+      if (looksLikeFilePath) {
+        // Dynamic import for Node.js file system
+        const fs = await import("node:fs/promises");
+        const buffer = await fs.readFile(file);
+        return new Uint8Array(buffer);
+      }
+
+      // Treat as UTF-8 content
+      return stringToUint8Array(file);
     }
     return file;
   }
@@ -471,43 +513,7 @@ export class ChunkService {
    */
   private getContentType(filename: string): string {
     const ext = filename.toLowerCase().split(".").pop();
-    switch (ext) {
-      case "pdf":
-        return "application/pdf";
-      case "docx":
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      case "pptx":
-        return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-      case "xlsx":
-        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      case "html":
-      case "htm":
-        return "text/html";
-      case "md":
-        return "text/markdown";
-      case "txt":
-        return "text/plain";
-      case "csv":
-        return "text/csv";
-      case "xml":
-        return "application/xml";
-      case "json":
-        return "application/json";
-      case "jpg":
-      case "jpeg":
-        return "image/jpeg";
-      case "png":
-        return "image/png";
-      case "gif":
-        return "image/gif";
-      case "bmp":
-        return "image/bmp";
-      case "tiff":
-      case "tif":
-        return "image/tiff";
-      default:
-        return "application/octet-stream";
-    }
+    return (ext && ChunkService.CONTENT_TYPE_BY_EXT[ext]) ?? "application/octet-stream";
   }
 
   /**

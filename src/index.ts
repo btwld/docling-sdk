@@ -20,8 +20,11 @@ export {
   Docling,
   createAPIClient,
   createCLIClient,
+  createWebClient,
   isAPIClient,
   isCLIClient,
+  isWebClient,
+  DoclingWebClient,
   type DoclingClientType,
 } from "./docling";
 
@@ -34,6 +37,7 @@ export type {
   DoclingClient as IDoclingClient,
   DoclingAPI,
   DoclingCLI,
+  DoclingWeb,
   DoclingClientBase,
   DoclingInstance,
   ProgressConfig,
@@ -51,6 +55,20 @@ export type DoclingAPIClientType = InstanceType<
 // Alias exports for common naming patterns
 export type { DoclingAPI as IDoclingAPIClient } from "./types/client";
 export type { DoclingCLI as IDoclingCLIClient } from "./types/client";
+export type { DoclingWeb as IDoclingWebClient } from "./types/client";
+
+// Web types
+export type {
+  DoclingWebClientConfig,
+  DoclingWebConfig,
+  WebOCRResult,
+  WebOCRDocument,
+  ImageInput,
+  WebProcessOptions,
+  WebClientEvents,
+  ExtractedTable,
+  ElementOverlay,
+} from "./types/web";
 
 export { ZodValidation } from "./validation/schemas";
 

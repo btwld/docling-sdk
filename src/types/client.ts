@@ -31,6 +31,7 @@ import type {
   TargetConversionResult,
   TaskStatusResponse,
 } from "./api";
+import type { ImageInput, WebClientEvents, WebOCRResult, WebProcessOptions } from "./web";
 
 /**
  * Progress update data
@@ -132,6 +133,7 @@ export type DoclingConfig =
         headers?: Record<string, string>;
       };
       cli?: never;
+      web?: never;
       progress?: ProgressConfig;
     } & DoclingSharedConfig)
   | ({
@@ -143,8 +145,20 @@ export type DoclingConfig =
         concurrency?: number;
       };
       api?: never;
+      web?: never;
       progress?: ProgressConfig;
-    } & DoclingSharedConfig);
+    } & DoclingSharedConfig)
+  | {
+      web: {
+        device?: "webgpu" | "wasm" | "auto";
+        modelId?: string;
+        maxNewTokens?: number;
+        wasmPaths?: Record<string, string>;
+        workerUrl?: string;
+      };
+      api?: never;
+      cli?: never;
+    };
 
 /**
  * Legacy API-specific configuration (for internal use)
@@ -182,13 +196,13 @@ export interface DoclingClientBase {
   /**
    * Client type identifier
    */
-  readonly type: "api" | "cli";
+  readonly type: "api" | "cli" | "web";
 
   /**
    * Convert document to various formats
    */
   convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -197,7 +211,7 @@ export interface DoclingClientBase {
    * Extract text content from document
    */
   extractText(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse>;
@@ -206,7 +220,7 @@ export interface DoclingClientBase {
    * Convert document to HTML format
    */
   toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse>;
@@ -215,7 +229,7 @@ export interface DoclingClientBase {
    * Convert document to Markdown format
    */
   toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">
   ): Promise<ConvertDocumentResponse>;
@@ -224,7 +238,7 @@ export interface DoclingClientBase {
    * Convert document to multiple formats
    */
   convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -233,7 +247,7 @@ export interface DoclingClientBase {
    * Process document with advanced options
    */
   process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -242,7 +256,7 @@ export interface DoclingClientBase {
    * Convert document and return as downloadable files
    */
   convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<ConversionFileResult>;
@@ -251,7 +265,7 @@ export interface DoclingClientBase {
    * Safe convert method using Result pattern
    */
   safeConvert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<SafeConversionResult>;
@@ -260,7 +274,7 @@ export interface DoclingClientBase {
    * Safe convert to file method using Result pattern
    */
   safeConvertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions
   ): Promise<SafeFileConversionResult>;
@@ -285,7 +299,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert using SYNC endpoint (fast JSON responses)
    */
   convertSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -294,7 +308,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert using ASYNC endpoint (advanced workflows)
    */
   convertAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -322,42 +336,42 @@ export interface DoclingAPI extends DoclingClientBase {
    * Providing `progress` will enable hybrid/websocket/http tracking for this call
    */
   convert(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   toHtml(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   toMarkdown(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: Omit<ConversionOptions, "to_formats">,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   convertDocument(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   process(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions,
     progress?: ProgressConfig
   ): Promise<ConvertDocumentResponse>;
 
   convertToFile(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options: ConversionOptions,
     progress?: ProgressConfig
@@ -440,7 +454,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Convert from buffer
    */
   convertFromBuffer(
-    buffer: Buffer,
+    buffer: Uint8Array,
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse>;
@@ -477,7 +491,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HybridChunker (SYNC endpoint)
    */
   chunkHybridSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -486,7 +500,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HierarchicalChunker (SYNC endpoint)
    */
   chunkHierarchicalSync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -495,7 +509,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HybridChunker (ASYNC endpoint)
    */
   chunkHybridAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -504,7 +518,7 @@ export interface DoclingAPI extends DoclingClientBase {
    * Chunk document using HierarchicalChunker (ASYNC endpoint)
    */
   chunkHierarchicalAsync(
-    file: Buffer | string,
+    file: Uint8Array | string,
     filename: string,
     options?: ConversionOptions
   ): Promise<ChunkDocumentResponse>;
@@ -614,13 +628,39 @@ export interface DoclingCLI extends DoclingClientBase {
 }
 
 /**
+ * Web-specific client interface
+ * Extends base with browser-based OCR capabilities
+ */
+export interface DoclingWeb extends DoclingClientBase {
+  readonly type: "web";
+
+  initialize(): Promise<void>;
+  destroy(): void;
+  readonly ready: boolean;
+  readonly processing: boolean;
+
+  processImage(input: ImageInput, options?: WebProcessOptions): Promise<WebOCRResult>;
+
+  on<K extends keyof WebClientEvents>(event: K, callback: (data: WebClientEvents[K]) => void): this;
+  off<K extends keyof WebClientEvents>(
+    event: K,
+    callback: (data: WebClientEvents[K]) => void
+  ): this;
+
+  clearCache(): Promise<boolean>;
+  getCacheSize(): Promise<number>;
+}
+
+/**
  * Conditional type that returns the correct client interface based on config
  */
 export type DoclingClient<T extends DoclingConfig> = T extends { api: unknown }
   ? DoclingAPI
   : T extends { cli: unknown }
     ? DoclingCLI
-    : DoclingAPI;
+    : T extends { web: unknown }
+      ? DoclingWeb
+      : DoclingAPI;
 
 /**
  * Type helper for creating strongly typed Docling instances
@@ -640,4 +680,10 @@ export function isCLIConfig(
   config: DoclingConfig
 ): config is Extract<DoclingConfig, { cli: unknown }> {
   return "cli" in config && config.cli !== undefined;
+}
+
+export function isWebConfig(
+  config: DoclingConfig
+): config is Extract<DoclingConfig, { web: unknown }> {
+  return "web" in config && config.web !== undefined;
 }

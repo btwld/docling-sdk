@@ -1,21 +1,25 @@
 import { DoclingAPIClient } from "./clients/api-client";
 import { DoclingCLIClient } from "./clients/cli-client";
+import { DoclingWebClient } from "./clients/web-client";
 import type { DoclingAPIConfig, DoclingCLIConfig, DoclingConfig } from "./types/client";
-import { isAPIConfig, isCLIConfig } from "./types/client";
+import { isAPIConfig, isCLIConfig, isWebConfig } from "./types/client";
+import type { DoclingWebClientConfig } from "./types/web";
 
 type ApiVariant = Extract<DoclingConfig, { api: unknown }>;
 type CliVariant = Extract<DoclingConfig, { cli: unknown }>;
+type WebVariant = Extract<DoclingConfig, { web: unknown }>;
 
 interface DoclingConstructor {
   new (config: ApiVariant): DoclingAPIClient;
   new (config: CliVariant): DoclingCLIClient;
-  new (config: DoclingConfig): DoclingAPIClient | DoclingCLIClient;
+  new (config: WebVariant): DoclingWebClient;
+  new (config: DoclingConfig): DoclingAPIClient | DoclingCLIClient | DoclingWebClient;
 }
 
 class DoclingImpl {
   constructor(config: DoclingConfig) {
     if (isAPIConfig(config)) {
-      const sharedConfig = omit(config, ["api", "cli"]);
+      const sharedConfig = omit(config, ["api", "cli", "web"]);
       const apiConfig = {
         type: "api" as const,
         ...config.api,
@@ -25,7 +29,7 @@ class DoclingImpl {
     }
 
     if (isCLIConfig(config)) {
-      const sharedConfig = omit(config, ["api", "cli"]);
+      const sharedConfig = omit(config, ["api", "cli", "web"]);
       const cliConfig = {
         type: "cli" as const,
         ...config.cli,
@@ -34,7 +38,17 @@ class DoclingImpl {
       return new DoclingCLIClient(cliConfig);
     }
 
-    throw new Error("Invalid configuration: must specify either 'api' or 'cli' configuration");
+    if (isWebConfig(config)) {
+      const webConfig = {
+        type: "web" as const,
+        ...config.web,
+      } satisfies DoclingWebClientConfig;
+      return new DoclingWebClient(webConfig);
+    }
+
+    throw new Error(
+      "Invalid configuration: must specify either 'api', 'cli', or 'web' configuration"
+    );
   }
 }
 
@@ -57,10 +71,12 @@ export type DoclingClientType<T extends DoclingConfig> = T extends DoclingAPICon
   ? DoclingAPIClient
   : T extends DoclingCLIConfig
     ? DoclingCLIClient
-    : never;
+    : T extends DoclingWebClientConfig
+      ? DoclingWebClient
+      : never;
 
 export function isAPIClient(
-  client: DoclingAPIClient | DoclingCLIClient
+  client: DoclingAPIClient | DoclingCLIClient | DoclingWebClient
 ): client is DoclingAPIClient {
   return client.type === "api";
 }
@@ -81,9 +97,36 @@ export function isAPIClient(
  * ```
  */
 export function isCLIClient(
-  client: DoclingAPIClient | DoclingCLIClient
+  client: DoclingAPIClient | DoclingCLIClient | DoclingWebClient
 ): client is DoclingCLIClient {
   return client.type === "cli";
+}
+
+/**
+ * Type guard to check if client is Web type
+ */
+export function isWebClient(
+  client: DoclingAPIClient | DoclingCLIClient | DoclingWebClient
+): client is DoclingWebClient {
+  return client.type === "web";
+}
+
+/**
+ * Create a Web client
+ *
+ * Convenience factory function for creating a web OCR client.
+ *
+ * @param options - Optional web client configuration (device, modelId, etc.)
+ * @returns DoclingWebClient instance ready for use
+ */
+export function createWebClient(
+  options?: Partial<Omit<DoclingWebClientConfig, "type">>
+): DoclingWebClient {
+  return new Docling({
+    web: {
+      ...options,
+    },
+  });
 }
 
 /**
@@ -154,6 +197,10 @@ export type {
   DoclingAPIConfig,
   DoclingCLIConfig,
 } from "./types/client";
+
+export type { DoclingWebClientConfig } from "./types/web";
+
+export { DoclingWebClient } from "./clients/web-client";
 
 /**
  * Default export of the main Docling factory function

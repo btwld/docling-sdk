@@ -1,0 +1,17 @@
+name = "docling-sdk-example"
+main = "worker.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+DOCLING_URL = "http://localhost:5001"
+
+# Development settings
+[dev]
+port = 8787
+local_protocol = "http"
+
+# Note: To deploy, you'll need to:
+# 1. Install wrangler: npm install -g wrangler
+# 2. Login to Cloudflare: wrangler login
+# 3. Update DOCLING_URL to your production Docling API URL
+# 4. Deploy: wrangler deploy
