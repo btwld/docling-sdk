@@ -4,6 +4,12 @@ import type { ChunkService } from "../services/chunk";
 import type { FileService } from "../services/file";
 import type { Result } from "../utils/result";
 import type {
+  ImageInput,
+  WebClientEvents,
+  WebOCRResult,
+  WebProcessOptions,
+} from "./web";
+import type {
   AcceleratorOptions,
   AsyncChunkTask,
   AsyncConversionTask,
@@ -132,6 +138,7 @@ export type DoclingConfig =
         headers?: Record<string, string>;
       };
       cli?: never;
+      web?: never;
       progress?: ProgressConfig;
     } & DoclingSharedConfig)
   | ({
@@ -143,8 +150,20 @@ export type DoclingConfig =
         concurrency?: number;
       };
       api?: never;
+      web?: never;
       progress?: ProgressConfig;
-    } & DoclingSharedConfig);
+    } & DoclingSharedConfig)
+  | {
+      web: {
+        device?: "webgpu" | "wasm" | "auto";
+        modelId?: string;
+        maxNewTokens?: number;
+        wasmPaths?: Record<string, string>;
+        workerUrl?: string;
+      };
+      api?: never;
+      cli?: never;
+    };
 
 /**
  * Legacy API-specific configuration (for internal use)
@@ -182,7 +201,7 @@ export interface DoclingClientBase {
   /**
    * Client type identifier
    */
-  readonly type: "api" | "cli";
+  readonly type: "api" | "cli" | "web";
 
   /**
    * Convert document to various formats
@@ -614,13 +633,42 @@ export interface DoclingCLI extends DoclingClientBase {
 }
 
 /**
+ * Web-specific client interface
+ * Extends base with browser-based OCR capabilities
+ */
+export interface DoclingWeb extends DoclingClientBase {
+  readonly type: "web";
+
+  initialize(): Promise<void>;
+  destroy(): void;
+  readonly ready: boolean;
+  readonly processing: boolean;
+
+  processImage(input: ImageInput, options?: WebProcessOptions): Promise<WebOCRResult>;
+
+  on<K extends keyof WebClientEvents>(
+    event: K,
+    callback: (data: WebClientEvents[K]) => void
+  ): this;
+  off<K extends keyof WebClientEvents>(
+    event: K,
+    callback: (data: WebClientEvents[K]) => void
+  ): this;
+
+  clearCache(): Promise<boolean>;
+  getCacheSize(): Promise<number>;
+}
+
+/**
  * Conditional type that returns the correct client interface based on config
  */
 export type DoclingClient<T extends DoclingConfig> = T extends { api: unknown }
   ? DoclingAPI
   : T extends { cli: unknown }
     ? DoclingCLI
-    : DoclingAPI;
+    : T extends { web: unknown }
+      ? DoclingWeb
+      : DoclingAPI;
 
 /**
  * Type helper for creating strongly typed Docling instances
@@ -640,4 +688,10 @@ export function isCLIConfig(
   config: DoclingConfig
 ): config is Extract<DoclingConfig, { cli: unknown }> {
   return "cli" in config && config.cli !== undefined;
+}
+
+export function isWebConfig(
+  config: DoclingConfig
+): config is Extract<DoclingConfig, { web: unknown }> {
+  return "web" in config && config.web !== undefined;
 }

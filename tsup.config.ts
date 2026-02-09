@@ -73,4 +73,54 @@ export default defineConfig([
     },
     noExternal: ["ofetch", "mitt"],
   },
+  // Web entry point - browser-based OCR (ESM only)
+  {
+    entry: {
+      web: "src/web-entry.ts",
+    },
+    format: ["esm"],
+    dts: true,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    minify: true,
+    target: "es2022",
+    outDir: "dist",
+    treeshake: true,
+    bundle: true,
+    external: ["zod", "@huggingface/transformers", "onnxruntime-web", "unpdf"],
+    platform: "browser",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    esbuildOptions(options) {
+      options.banner = {
+        js: '"use strict";',
+      };
+    },
+    noExternal: ["ofetch", "mitt"],
+  },
+  // Web Worker - separate bundle for model inference (ESM only)
+  {
+    entry: {
+      "web-worker": "src/web/worker.ts",
+    },
+    format: ["esm"],
+    dts: true,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    minify: true,
+    target: "es2022",
+    outDir: "dist",
+    treeshake: true,
+    bundle: true,
+    external: ["@huggingface/transformers", "onnxruntime-web"],
+    platform: "browser",
+    esbuildOptions(options) {
+      options.banner = {
+        js: '"use strict";',
+      };
+    },
+  },
 ]);

@@ -65,15 +65,54 @@ export function isAPIClient(client: unknown): client is DoclingAPIClient {
 // Task manager (cross-runtime)
 export { AsyncTaskManager } from "./services/async-task-manager";
 
-// Client types (API only, no CLI types)
+// Web client (browser-based OCR)
+import { DoclingWebClient } from "./clients/web-client";
+import type { DoclingWebClientConfig } from "./types/web";
+
+export { DoclingWebClient };
+
+/**
+ * Create a Web client (browser-compatible version)
+ */
+export function createWebClient(
+  options?: Partial<Omit<DoclingWebClientConfig, "type">>
+): DoclingWebClient {
+  return new DoclingWebClient({
+    type: "web" as const,
+    ...options,
+  });
+}
+
+/**
+ * Type guard to check if client is Web type
+ */
+export function isWebClient(client: unknown): client is DoclingWebClient {
+  return client instanceof DoclingWebClient || (client as { type: string })?.type === "web";
+}
+
+// Client types (API + Web, no CLI types)
 export type {
   DoclingAPIConfig,
   DoclingClientBase,
+  DoclingWeb,
   ProgressConfig,
   ProgressUpdate,
   SafeConversionResult,
   SafeFileConversionResult,
 } from "./types/client";
+
+// Web types
+export type {
+  DoclingWebClientConfig,
+  DoclingWebConfig,
+  WebOCRResult,
+  WebOCRDocument,
+  ImageInput,
+  WebProcessOptions,
+  WebClientEvents,
+  ExtractedTable,
+  ElementOverlay,
+} from "./types/web";
 
 // Validation
 export { ZodValidation } from "./validation/schemas";

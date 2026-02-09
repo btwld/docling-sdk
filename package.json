@@ -33,6 +33,15 @@
       "import": "./dist/browser.mjs",
       "default": "./dist/browser.mjs"
     },
+    "./web": {
+      "types": "./dist/web.d.mts",
+      "import": "./dist/web.mjs",
+      "default": "./dist/web.mjs"
+    },
+    "./web/worker": {
+      "import": "./dist/web-worker.mjs",
+      "default": "./dist/web-worker.mjs"
+    },
     "./platform": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
@@ -82,6 +91,7 @@
     "examples:bun": "bun run examples/runtimes/bun.ts",
     "examples:deno": "deno run --allow-net --allow-env --allow-read examples/runtimes/deno.ts",
     "examples:browser": "vite examples/runtimes/browser",
+    "examples:web-ocr": "cd examples/web-ocr && npm run dev",
     "examples:worker": "cd examples/runtimes/cloudflare-worker && wrangler dev",
     "openapi:fetch": "tsx scripts/fetch-openapi.ts",
     "openapi:generate": "openapi-typescript openapi/docling-serve.json -o src/types/generated/api.ts",
@@ -102,7 +112,11 @@
     "browser",
     "bun",
     "deno",
-    "nodejs"
+    "nodejs",
+    "webgpu",
+    "wasm",
+    "web-ocr",
+    "onnx"
   ],
   "author": "Kauan Guesser <54258870+kauandotnet@users.noreply.github.com>",
   "license": "BSD-3-Clause",
@@ -148,10 +162,22 @@
     "vitest": "^2.1.8"
   },
   "peerDependencies": {
-    "typescript": ">=4.9.0"
+    "typescript": ">=4.9.0",
+    "unpdf": ">=0.12.0",
+    "@huggingface/transformers": ">=3.0.0",
+    "onnxruntime-web": ">=1.18.0"
   },
   "peerDependenciesMeta": {
     "typescript": {
+      "optional": true
+    },
+    "unpdf": {
+      "optional": true
+    },
+    "@huggingface/transformers": {
+      "optional": true
+    },
+    "onnxruntime-web": {
       "optional": true
     }
   }
