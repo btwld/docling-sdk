@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [2.0.0](https://github.com/btwld/docling-sdk/compare/v1.3.6...v2.0.0) (2026-02-09)
+
+### 🐛 Bug Fixes
+
+- fix(ci): release trigger regex not matching conventional commit bang notation (#61) (d272adf)
+
+### 🔧 Maintenance
+
+- chore: revert failed v3.0.0 release and reset version to 1.3.6 (#63) (0d46f26)
+- chore: update CHANGELOG.md for v3.0.0 [skip ci] (a5c3c16)
+- chore: bump version to 3.0.0 [skip ci] (26ee08a)
+- chore: revert version to 1.3.6 for automated release bump (#62) (5728c1c)
+
+### 📦 Other Changes
+
+- feat!: cross-runtime support, browser OCR client, and switch-to-hashmap refactor (#60) (ba47e03)
+
+
 ## [1.3.6](https://github.com/btwld/docling-sdk/compare/v1.3.5...v1.3.6) (2025-10-09)
 
 ### ✨ Features
