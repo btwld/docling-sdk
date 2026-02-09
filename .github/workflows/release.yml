@@ -65,7 +65,7 @@ jobs:
             releasable_commits=$(echo "$commits" | grep -v "chore: bump version\|\\[skip ci\\]\|^docs:\|^style:\|^test:" || true)
 
             # Only release if there are significant changes (fixes, features, refactors, etc.)
-            significant_commits=$(echo "$releasable_commits" | grep -E "^(feat|fix|refactor|perf|chore):" || true)
+            significant_commits=$(echo "$releasable_commits" | grep -E "^(feat|fix|refactor|perf|chore)(\([^)]+\))?!?:" || true)
 
             if [ -n "$significant_commits" ]; then
               echo "should-release=true" >> $GITHUB_OUTPUT
