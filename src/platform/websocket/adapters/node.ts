@@ -3,7 +3,7 @@
  * Uses the 'ws' library for Node.js environments
  */
 
-import { randomUUID, stringToUint8Array, uint8ArrayToString, type BinaryData } from "../../binary";
+import { type BinaryData, randomUUID, stringToUint8Array, uint8ArrayToString } from "../../binary";
 import { isNode } from "../../detection";
 import type {
   WebSocketAdapter,
@@ -51,7 +51,7 @@ async function getWsModule(): Promise<WsModule> {
     return wsModule;
   } catch {
     throw new Error(
-      'ws package is required for Node.js WebSocket support. Install it with: npm install ws'
+      "ws package is required for Node.js WebSocket support. Install it with: npm install ws"
     );
   }
 }

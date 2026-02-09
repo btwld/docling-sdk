@@ -46,7 +46,9 @@ class DoclingImpl {
       return new DoclingWebClient(webConfig);
     }
 
-    throw new Error("Invalid configuration: must specify either 'api', 'cli', or 'web' configuration");
+    throw new Error(
+      "Invalid configuration: must specify either 'api', 'cli', or 'web' configuration"
+    );
   }
 }
 

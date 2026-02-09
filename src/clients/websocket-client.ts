@@ -5,10 +5,7 @@
 
 import { CrossEventEmitter } from "../platform/events";
 import { delay } from "../platform/timers";
-import {
-  CrossWebSocket,
-  type WebSocketHooks,
-} from "../platform/websocket";
+import { CrossWebSocket, type WebSocketHooks } from "../platform/websocket";
 import { DoclingNetworkError, DoclingTimeoutError } from "../types";
 import type {
   ProcessingError,
@@ -298,50 +295,56 @@ export class DoclingWebSocketClient extends CrossEventEmitter<DoclingWebSocketEv
   /**
    * Handle incoming WebSocket messages
    */
-  private handleMessage(message: WebSocketMessage): void {
-    switch (message.message) {
-      case "connection":
-        this.emit("connection", message);
-        break;
+  private static readonly STATUS_EVENTS: Record<
+    string,
+    "taskComplete" | "taskFailed" | "taskStarted"
+  > = {
+    success: "taskComplete",
+    failure: "taskFailed",
+    started: "taskStarted",
+  };
 
-      case "update":
-        if (message.task) {
-          this.emit("taskUpdate", message.task);
-          this.emit("task_update", message);
-          this.emit("status", [message.task.task_status, message.task.task_id]);
+  private readonly messageHandlers: Record<string, (message: WebSocketMessage) => void> = {
+    connection: (message) => {
+      this.emit("connection", message);
+    },
+    update: (message) => {
+      if (!message.task) return;
 
-          // Emit progress event for ProgressTracker
-          this.emit("progress", {
-            stage: message.task.task_status,
-            percentage: this.calculateProgress(message.task.task_status),
-            message: `Task ${message.task.task_id}: ${message.task.task_status}`,
-            taskId: message.task.task_id,
-            position: message.task.task_position,
-            status: message.task.task_status,
-            timestamp: Date.now(),
-          });
+      this.emit("taskUpdate", message.task);
+      this.emit("task_update", message);
+      this.emit("status", [message.task.task_status, message.task.task_id]);
 
-          if (message.task.task_status === "success") {
-            this.emit("taskComplete", message.task);
-          } else if (message.task.task_status === "failure") {
-            this.emit("taskFailed", message.task);
-          } else if (message.task.task_status === "started") {
-            this.emit("taskStarted", message.task);
-          }
-        }
-        break;
+      this.emit("progress", {
+        stage: message.task.task_status,
+        percentage: this.calculateProgress(message.task.task_status),
+        message: `Task ${message.task.task_id}: ${message.task.task_status}`,
+        taskId: message.task.task_id,
+        position: message.task.task_position,
+        status: message.task.task_status,
+        timestamp: Date.now(),
+      });
 
-      case "error": {
-        const error: ProcessingError = {
-          message: message.error || "Unknown WebSocket error",
-          code: "WEBSOCKET_ERROR",
-        };
-        this.emit("taskError", error);
-        break;
+      const statusEvent = DoclingWebSocketClient.STATUS_EVENTS[message.task.task_status];
+      if (statusEvent) {
+        this.emit(statusEvent, message.task);
       }
+    },
+    error: (message) => {
+      const error: ProcessingError = {
+        message: message.error || "Unknown WebSocket error",
+        code: "WEBSOCKET_ERROR",
+      };
+      this.emit("taskError", error);
+    },
+  };
 
-      default:
-        this.emit("unknownMessage", message);
+  private handleMessage(message: WebSocketMessage): void {
+    const handler = this.messageHandlers[message.message ?? ""];
+    if (handler) {
+      handler(message);
+    } else {
+      this.emit("unknownMessage", message);
     }
   }
 

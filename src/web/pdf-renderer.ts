@@ -18,15 +18,15 @@ export async function renderPdfToImages(
   data: Uint8Array | ArrayBuffer,
   options?: { scale?: number }
 ): Promise<RenderedPage[]> {
-  let getDocumentProxy: (data: Uint8Array) => Promise<{ numPages: number; getPage: (pageNum: number) => Promise<unknown> }>;
+  let getDocumentProxy: (
+    data: Uint8Array
+  ) => Promise<{ numPages: number; getPage: (pageNum: number) => Promise<unknown> }>;
 
   try {
     const unpdf = await import("unpdf");
     getDocumentProxy = unpdf.getDocumentProxy as typeof getDocumentProxy;
   } catch {
-    throw new Error(
-      "unpdf is required for PDF processing. Install it: npm install unpdf"
-    );
+    throw new Error("unpdf is required for PDF processing. Install it: npm install unpdf");
   }
 
   const scale = options?.scale ?? 2;

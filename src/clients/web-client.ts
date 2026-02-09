@@ -9,9 +9,9 @@
 
 import { CrossEventEmitter } from "../platform/events";
 import type {
+  ConversionFileResult,
   ConversionOptions,
   ConvertDocumentResponse,
-  ConversionFileResult,
 } from "../types/api";
 import type {
   DoclingWeb,
@@ -72,32 +72,38 @@ export class DoclingWebClient implements DoclingWeb {
       const workerUrl = this.config.workerUrl ?? this.createWorkerBlobUrl();
       this.worker = new Worker(workerUrl, { type: "module" });
 
-      const handleMessage = (event: MessageEvent<WorkerMessageFromWorker>) => {
-        const message = event.data;
+      type InitHandlerMap = {
+        [K in WorkerMessageFromWorker["type"]]?: (
+          msg: Extract<WorkerMessageFromWorker, { type: K }>
+        ) => void;
+      };
 
-        switch (message.type) {
-          case "PROGRESS":
-            this.events.emit("loading", {
-              progress: message.progress,
-              status: message.status,
-            });
-            break;
-
-          case "READY":
-            this.isReady = true;
-            this.events.emit("ready", undefined as unknown as undefined);
-            resolve();
-            break;
-
-          case "ERROR": {
-            const error = { message: message.error };
-            this.events.emit("error", error);
-            if (!this.isReady) {
-              reject(new Error(message.error));
-            }
-            break;
+      const initHandlers: InitHandlerMap = {
+        PROGRESS: (msg) => {
+          this.events.emit("loading", {
+            progress: msg.progress,
+            status: msg.status,
+          });
+        },
+        READY: () => {
+          this.isReady = true;
+          this.events.emit("ready", undefined as unknown as undefined);
+          resolve();
+        },
+        ERROR: (msg) => {
+          const error = { message: msg.error };
+          this.events.emit("error", error);
+          if (!this.isReady) {
+            reject(new Error(msg.error));
           }
-        }
+        },
+      };
+
+      const handleMessage = (event: MessageEvent<WorkerMessageFromWorker>) => {
+        const handler = initHandlers[event.data.type] as
+          | ((msg: WorkerMessageFromWorker) => void)
+          | undefined;
+        handler?.(event.data);
       };
 
       this.worker.addEventListener("message", handleMessage);
@@ -175,47 +181,51 @@ export class DoclingWebClient implements DoclingWeb {
       const src = await this.imageInputToDataUrl(input);
 
       return await new Promise<WebOCRResult>((resolve, reject) => {
+        type ProcessHandlerMap = {
+          [K in WorkerMessageFromWorker["type"]]?: (
+            msg: Extract<WorkerMessageFromWorker, { type: K }>
+          ) => void;
+        };
+
+        const processHandlers: ProcessHandlerMap = {
+          REPORT: (msg) => {
+            this.events.emit("status", { status: msg.status });
+          },
+          STREAM: (msg) => {
+            this.events.emit("stream", {
+              chunk: msg.chunk,
+              progress: msg.progress,
+            });
+          },
+          DONE: (msg) => {
+            this.isProcessing = false;
+            const result: WebOCRResult = {
+              raw: msg.text,
+              html: msg.html,
+              markdown: msg.markdown,
+              plainText: msg.plainText,
+              json: msg.json,
+              tables: msg.tables,
+              overlays: msg.overlays,
+            };
+            this.events.emit("complete", result);
+            this.worker?.removeEventListener("message", handleMessage);
+            resolve(result);
+          },
+          ERROR: (msg) => {
+            this.isProcessing = false;
+            const error = { message: msg.error };
+            this.events.emit("error", error);
+            this.worker?.removeEventListener("message", handleMessage);
+            reject(new Error(msg.error));
+          },
+        };
+
         const handleMessage = (event: MessageEvent<WorkerMessageFromWorker>) => {
-          const message = event.data;
-
-          switch (message.type) {
-            case "REPORT":
-              this.events.emit("status", { status: message.status });
-              break;
-
-            case "STREAM":
-              this.events.emit("stream", {
-                chunk: message.chunk,
-                progress: message.progress,
-              });
-              break;
-
-            case "DONE": {
-              this.isProcessing = false;
-              const result: WebOCRResult = {
-                raw: message.text,
-                html: message.html,
-                markdown: message.markdown,
-                plainText: message.plainText,
-                json: message.json,
-                tables: message.tables,
-                overlays: message.overlays,
-              };
-              this.events.emit("complete", result);
-              this.worker?.removeEventListener("message", handleMessage);
-              resolve(result);
-              break;
-            }
-
-            case "ERROR": {
-              this.isProcessing = false;
-              const error = { message: message.error };
-              this.events.emit("error", error);
-              this.worker?.removeEventListener("message", handleMessage);
-              reject(new Error(message.error));
-              break;
-            }
-          }
+          const handler = processHandlers[event.data.type] as
+            | ((msg: WorkerMessageFromWorker) => void)
+            | undefined;
+          handler?.(event.data);
         };
 
         this.worker?.addEventListener("message", handleMessage);
@@ -375,9 +385,8 @@ export class DoclingWebClient implements DoclingWeb {
     const combinedHtml = results.map((r) => r.html).join("\n");
 
     // For JSON, combine into a single document
-    const combinedJson = results.length === 1
-      ? results[0]?.json
-      : doclingToJson(combinedRaw, filename);
+    const combinedJson =
+      results.length === 1 ? results[0]?.json : doclingToJson(combinedRaw, filename);
 
     return {
       document: {

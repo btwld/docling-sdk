@@ -11,11 +11,7 @@
  * @param value - Optional value to resolve with
  * @param signal - Optional AbortSignal to cancel the delay
  */
-export function delay<T = void>(
-  ms: number,
-  value?: T,
-  signal?: AbortSignal
-): Promise<T> {
+export function delay<T = void>(ms: number, value?: T, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException("Delay aborted", "AbortError"));
@@ -89,10 +85,7 @@ export async function withTimeout<T>(
   const controller = createTimeoutController(ms);
 
   try {
-    const result = await Promise.race([
-      promise,
-      timeout(ms, message),
-    ]);
+    const result = await Promise.race([promise, timeout(ms, message)]);
     controller.clear();
     return result;
   } catch (error) {
@@ -141,11 +134,14 @@ export function throttle<T extends (...args: unknown[]) => unknown>(
       if (timeoutId !== undefined) {
         globalThis.clearTimeout(timeoutId);
       }
-      timeoutId = globalThis.setTimeout(() => {
-        lastCall = Date.now();
-        fn(...args);
-        timeoutId = undefined;
-      }, ms - (now - lastCall));
+      timeoutId = globalThis.setTimeout(
+        () => {
+          lastCall = Date.now();
+          fn(...args);
+          timeoutId = undefined;
+        },
+        ms - (now - lastCall)
+      );
     }
   };
 }

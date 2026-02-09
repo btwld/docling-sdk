@@ -5,6 +5,8 @@
  * Ported from web-ocr/packages/docling-client/src/text-converter.ts
  */
 
+const EMPTY_CELL_TAGS = new Set(["lcel", "ucel", "xcel"]);
+
 function cleanContent(content: string): string {
   return content.replace(/<loc_\d+>/g, "").trim();
 }
@@ -29,16 +31,7 @@ function parseTableToText(content: string): string {
       const tag = parts[i];
       const cellContent = cleanContent(parts[i + 1] ?? "");
 
-      switch (tag) {
-        case "lcel":
-        case "ucel":
-        case "xcel":
-          cells.push("");
-          break;
-        default:
-          cells.push(cellContent);
-          break;
-      }
+      cells.push(EMPTY_CELL_TAGS.has(tag ?? "") ? "" : cellContent);
     }
 
     maxCols = Math.max(maxCols, cells.length);
@@ -61,7 +54,11 @@ function processInlineContent(content: string): string {
   let result = "";
   let lastIndex = 0;
 
-  for (let match = inlineTagRegex.exec(content); match !== null; match = inlineTagRegex.exec(content)) {
+  for (
+    let match = inlineTagRegex.exec(content);
+    match !== null;
+    match = inlineTagRegex.exec(content)
+  ) {
     const textBefore = content.slice(lastIndex, match.index);
     result += cleanContent(textBefore);
 
@@ -75,112 +72,101 @@ function processInlineContent(content: string): string {
   return result;
 }
 
+type TagHandler = (tagName: string, content: string, clean: string) => string;
+
+function handleTextCode(_t: string, content: string): string {
+  const codeContent = cleanContent(content.replace(/<_[^_]+_>/, "")).trim();
+  const indentedCode = codeContent
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+  return `${indentedCode}\n\n`;
+}
+
+function handleTextOrderedList(_t: string, content: string): string {
+  const items: string[] = [];
+  const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
+  let index = 1;
+  for (
+    let match = listItemRegex.exec(content);
+    match !== null;
+    match = listItemRegex.exec(content)
+  ) {
+    const itemContent = cleanContent(match[1] ?? "")
+      .replace(/^[·\-]\s*/, "")
+      .trim();
+    items.push(`${index}. ${itemContent}`);
+    index++;
+  }
+  return `${items.join("\n")}\n\n`;
+}
+
+function handleTextUnorderedList(_t: string, content: string): string {
+  const items: string[] = [];
+  const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
+  for (
+    let match = listItemRegex.exec(content);
+    match !== null;
+    match = listItemRegex.exec(content)
+  ) {
+    const itemContent = cleanContent(match[1] ?? "")
+      .replace(/^[·\-]\s*/, "")
+      .trim();
+    items.push(`* ${itemContent}`);
+  }
+  return `${items.join("\n")}\n\n`;
+}
+
+function handleTextPictureOrChart(tagName: string, content: string): string {
+  const captionMatch = content.match(/<caption>([\s\S]*?)<\/caption>/);
+  const caption = captionMatch ? cleanContent(captionMatch[1] ?? "") : `[${tagName}]`;
+  return `[${caption}]\n\n`;
+}
+
+const sectionHeader: TagHandler = (_t, _c, clean) =>
+  `${clean}\n${"-".repeat(Math.min(clean.length, 40))}\n\n`;
+
+const textOrParagraph: TagHandler = (_t, _c, clean) => `${clean}\n\n`;
+
+const TEXT_TAG_HANDLERS: Record<string, TagHandler> = {
+  doctag: (_t, content) => convertDocTags(content),
+  document: (_t, content) => convertDocTags(content),
+  title: (_t, _c, clean) => `${clean}\n${"=".repeat(Math.min(clean.length, 50))}\n\n`,
+  section_header_level_0: sectionHeader,
+  section_header_level_1: sectionHeader,
+  section_header_level_2: sectionHeader,
+  section_header_level_3: sectionHeader,
+  section_header_level_4: sectionHeader,
+  section_header_level_5: sectionHeader,
+  text: textOrParagraph,
+  paragraph: textOrParagraph,
+  code: handleTextCode,
+  formula: (_t, _c, clean) => `${clean}\n\n`,
+  otsl: (_t, content) => `${parseTableToText(content)}\n\n`,
+  picture: handleTextPictureOrChart,
+  chart: handleTextPictureOrChart,
+  ordered_list: handleTextOrderedList,
+  unordered_list: handleTextUnorderedList,
+  list_item: (_t, _c, clean) => `* ${clean.replace(/^[·\-]\s*/, "").trim()}\n`,
+  caption: (_t, _c, clean) => `[${clean}]\n\n`,
+  footnote: (_t, _c, clean) => `[Note: ${clean}]\n\n`,
+  page_header: () => "",
+  page_footer: () => "",
+  page_break: () => `\n${"─".repeat(40)}\n\n`,
+  checkbox_selected: () => "[X] ",
+  checkbox_unselected: () => "[ ] ",
+  inline: (_t, content) => processInlineContent(content),
+  reference: (_t, _c, clean) => clean,
+  smiles: (_t, _c, clean) => clean,
+};
+
 function processTag(tagName: string, content: string): string {
   const clean = cleanContent(content);
-
-  switch (tagName) {
-    case "doctag":
-    case "document":
-      return convertDocTags(content);
-
-    case "title":
-      return `${clean}\n${"=".repeat(Math.min(clean.length, 50))}\n\n`;
-
-    case "section_header_level_0":
-    case "section_header_level_1":
-    case "section_header_level_2":
-    case "section_header_level_3":
-    case "section_header_level_4":
-    case "section_header_level_5":
-      return `${clean}\n${"-".repeat(Math.min(clean.length, 40))}\n\n`;
-
-    case "text":
-    case "paragraph":
-      return `${clean}\n\n`;
-
-    case "code": {
-      const codeContent = cleanContent(content.replace(/<_[^_]+_>/, "")).trim();
-      const indentedCode = codeContent
-        .split("\n")
-        .map((line) => `    ${line}`)
-        .join("\n");
-      return `${indentedCode}\n\n`;
-    }
-
-    case "formula":
-      return `${clean}\n\n`;
-
-    case "otsl":
-      return `${parseTableToText(content)}\n\n`;
-
-    case "picture":
-    case "chart": {
-      const captionMatch = content.match(/<caption>([\s\S]*?)<\/caption>/);
-      const caption = captionMatch ? cleanContent(captionMatch[1] ?? "") : `[${tagName}]`;
-      return `[${caption}]\n\n`;
-    }
-
-    case "ordered_list": {
-      const items: string[] = [];
-      const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
-      let index = 1;
-      for (let match = listItemRegex.exec(content); match !== null; match = listItemRegex.exec(content)) {
-        const itemContent = cleanContent(match[1] ?? "").replace(/^[·\-]\s*/, "").trim();
-        items.push(`${index}. ${itemContent}`);
-        index++;
-      }
-      return `${items.join("\n")}\n\n`;
-    }
-
-    case "unordered_list": {
-      const items: string[] = [];
-      const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
-      for (let match = listItemRegex.exec(content); match !== null; match = listItemRegex.exec(content)) {
-        const itemContent = cleanContent(match[1] ?? "").replace(/^[·\-]\s*/, "").trim();
-        items.push(`* ${itemContent}`);
-      }
-      return `${items.join("\n")}\n\n`;
-    }
-
-    case "list_item": {
-      const itemContent = clean.replace(/^[·\-]\s*/, "").trim();
-      return `* ${itemContent}\n`;
-    }
-
-    case "caption":
-      return `[${clean}]\n\n`;
-
-    case "footnote":
-      return `[Note: ${clean}]\n\n`;
-
-    case "page_header":
-    case "page_footer":
-      return "";
-
-    case "page_break":
-      return `\n${"─".repeat(40)}\n\n`;
-
-    case "checkbox_selected":
-      return "[X] ";
-
-    case "checkbox_unselected":
-      return "[ ] ";
-
-    case "inline":
-      return processInlineContent(content);
-
-    case "reference":
-      return clean;
-
-    case "smiles":
-      return clean;
-
-    default:
-      if (clean) {
-        return `${clean}\n\n`;
-      }
-      return "";
+  const handler = TEXT_TAG_HANDLERS[tagName];
+  if (handler) {
+    return handler(tagName, content, clean);
   }
+  return clean ? `${clean}\n\n` : "";
 }
 
 function convertDocTags(input: string): string {

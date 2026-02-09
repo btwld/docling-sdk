@@ -15,9 +15,9 @@
  */
 
 import type {
-  paths as GeneratedPaths,
   components as GeneratedComponents,
   operations as GeneratedOperations,
+  paths as GeneratedPaths,
 } from "./api";
 
 /**

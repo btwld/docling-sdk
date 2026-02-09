@@ -3,19 +3,15 @@
  * Provides a unified HTTP interface for all runtime environments
  */
 
-import { $fetch, ofetch, type FetchOptions, type FetchError } from "ofetch";
+import { $fetch, type FetchError, type FetchOptions, ofetch } from "ofetch";
+import { type BinaryData, binaryToBlob, uint8ArrayToString } from "./binary";
 import type {
-  HttpClientConfig,
-  HttpResponse,
   ExtendedHttpOptions,
   FileUploadInfo,
+  HttpClientConfig,
+  HttpResponse,
   UploadProgress,
 } from "./types";
-import {
-  binaryToBlob,
-  uint8ArrayToString,
-  type BinaryData,
-} from "./binary";
 
 /**
  * Default retry status codes
@@ -76,7 +72,12 @@ export class PlatformHttpClient {
       retryStatusCodes: options.retryStatusCodes ?? this.config.retryStatusCodes,
       signal: options.signal,
       query: options.query,
-      parseResponse: options.parseResponse !== false ? JSON.parse : undefined,
+      parseResponse:
+        options.responseType === "binary" || options.responseType === "stream"
+          ? undefined
+          : options.parseResponse !== false
+            ? JSON.parse
+            : undefined,
       ignoreResponseError: options.ignoreResponseError,
       // Cast interceptors to any to bypass ofetch's complex generic types
       onRequest: options.onRequest as FetchOptions["onRequest"],
@@ -89,9 +90,10 @@ export class PlatformHttpClient {
     if (options.body !== undefined) {
       if (options.body instanceof FormData) {
         fetchOptions.body = options.body;
-        // Let ofetch handle Content-Type for FormData
-        const headers = fetchOptions.headers as Record<string, string>;
-        headers["Content-Type"] = undefined as unknown as string;
+        // Remove Content-Type so the runtime auto-generates the multipart boundary
+        const headers = fetchOptions.headers as Record<string, unknown>;
+        // biome-ignore lint/performance/noDelete: Setting to undefined causes ofetch to send literal "Content-Type: undefined" - must use delete
+        delete headers["Content-Type"];
       } else if (options.body instanceof ReadableStream) {
         fetchOptions.body = options.body;
       } else if (typeof options.body === "string") {
@@ -162,7 +164,11 @@ export class PlatformHttpClient {
     body?: unknown,
     options: Omit<ExtendedHttpOptions, "method" | "body"> = {}
   ): Promise<HttpResponse<T>> {
-    return this.request<T>(endpoint, { ...options, method: "POST", body: body as ExtendedHttpOptions["body"] });
+    return this.request<T>(endpoint, {
+      ...options,
+      method: "POST",
+      body: body as ExtendedHttpOptions["body"],
+    });
   }
 
   /**
@@ -173,7 +179,11 @@ export class PlatformHttpClient {
     body?: unknown,
     options: Omit<ExtendedHttpOptions, "method" | "body"> = {}
   ): Promise<HttpResponse<T>> {
-    return this.request<T>(endpoint, { ...options, method: "PUT", body: body as ExtendedHttpOptions["body"] });
+    return this.request<T>(endpoint, {
+      ...options,
+      method: "PUT",
+      body: body as ExtendedHttpOptions["body"],
+    });
   }
 
   /**

@@ -7,6 +7,8 @@
 
 import type { ExtractedTable } from "../../types/web";
 
+const EMPTY_CELL_TAGS = new Set(["lcel", "ucel", "xcel"]);
+
 function cleanContent(content: string): string {
   return content.replace(/<loc_\d+>/g, "").trim();
 }
@@ -35,16 +37,7 @@ function parseTable(content: string): ExtractedTable {
         hasHeaderInRow = true;
       }
 
-      switch (tag) {
-        case "lcel":
-        case "ucel":
-        case "xcel":
-          cells.push("");
-          break;
-        default:
-          cells.push(cellContent);
-          break;
-      }
+      cells.push(EMPTY_CELL_TAGS.has(tag ?? "") ? "" : cellContent);
     }
 
     if (hasHeaderInRow) {
@@ -111,10 +104,17 @@ export function extractTables(doctags: string): ExtractedTable[] {
   }
 
   const pictureTableRegex = /<(?:picture|chart)>([\s\S]*?)<\/(?:picture|chart)>/g;
-  for (let match = pictureTableRegex.exec(doctags); match !== null; match = pictureTableRegex.exec(doctags)) {
+  for (
+    let match = pictureTableRegex.exec(doctags);
+    match !== null;
+    match = pictureTableRegex.exec(doctags)
+  ) {
     const content = match[1] ?? "";
     if (/<(fcel|ched|rhed)>/.test(content)) {
-      const cleanedContent = content.replace(/<(?!nl|fcel|ched|rhed|srow|ecel|ucel|lcel|xcel)[a-z_]+>/g, "");
+      const cleanedContent = content.replace(
+        /<(?!nl|fcel|ched|rhed|srow|ecel|ucel|lcel|xcel)[a-z_]+>/g,
+        ""
+      );
       const table = parseTable(cleanedContent);
       if (table.headers.length > 0 || table.rows.length > 0) {
         tables.push(table);

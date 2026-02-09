@@ -24,7 +24,10 @@ export type {
 } from "./types";
 
 // Re-export type separately (for use in type contexts)
-export type { WebSocketAdapterFactory, WebSocketReadyState as WebSocketReadyStateType } from "./types";
+export type {
+  WebSocketAdapterFactory,
+  WebSocketReadyState as WebSocketReadyStateType,
+} from "./types";
 
 // Lazy-loaded adapters
 let browserAdapter: typeof import("./adapters/browser") | null = null;
@@ -174,10 +177,7 @@ export class CrossWebSocket {
   /**
    * Add a hook handler
    */
-  on<K extends keyof WebSocketHooks>(
-    event: K,
-    handler: NonNullable<WebSocketHooks[K]>
-  ): this {
+  on<K extends keyof WebSocketHooks>(event: K, handler: NonNullable<WebSocketHooks[K]>): this {
     this.hooks[event] = handler as WebSocketHooks[K];
     this.adapter?.setHooks(this.hooks);
     return this;

@@ -150,9 +150,7 @@ export {
   hasNativeFetch,
 } from "./platform/detection";
 
-export {
-  PlatformHttpClient,
-} from "./platform/http";
+export { PlatformHttpClient } from "./platform/http";
 
 export {
   CrossWebSocket,

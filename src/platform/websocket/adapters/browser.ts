@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "../../binary";
-import { stringToUint8Array, uint8ArrayToString, type BinaryData } from "../../binary";
+import { type BinaryData, stringToUint8Array, uint8ArrayToString } from "../../binary";
 import type {
   WebSocketAdapter,
   WebSocketAdapterOptions,
@@ -241,6 +241,8 @@ export class BrowserWebSocketAdapter implements WebSocketAdapter {
 /**
  * Create a browser WebSocket adapter
  */
-export function createBrowserWebSocketAdapter(options: WebSocketAdapterOptions): BrowserWebSocketAdapter {
+export function createBrowserWebSocketAdapter(
+  options: WebSocketAdapterOptions
+): BrowserWebSocketAdapter {
   return new BrowserWebSocketAdapter(options);
 }

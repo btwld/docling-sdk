@@ -3,16 +3,12 @@
  * Wraps the cross-runtime platform HTTP client while maintaining backward compatibility
  */
 
+import { type ExtendedHttpOptions, type FileUploadInfo, PlatformHttpClient } from "../platform";
 import {
-  PlatformHttpClient,
-  type ExtendedHttpOptions,
-  type FileUploadInfo,
-} from "../platform";
-import {
-  createBinary,
-  bufferToUint8Array,
-  isNodeBuffer,
   type BinaryData,
+  bufferToUint8Array,
+  createBinary,
+  isNodeBuffer,
 } from "../platform/binary";
 import { isNode } from "../platform/detection";
 import { DoclingNetworkError, DoclingTimeoutError } from "../types";
@@ -270,17 +266,12 @@ export class HttpClient {
         contentType: file.contentType,
       }));
 
-      const response = await this.platformClient.uploadFiles<T>(
-        endpoint,
-        fileInfos,
-        fields,
-        {
-          timeout: options.timeout || this.config.timeout,
-          retry: options.retries ?? this.config.retries,
-          retryDelay: options.retryDelay ?? this.config.retryDelay,
-          responseType: options.accept === "bytes" ? "binary" : "json",
-        }
-      );
+      const response = await this.platformClient.uploadFiles<T>(endpoint, fileInfos, fields, {
+        timeout: options.timeout || this.config.timeout,
+        retry: options.retries ?? this.config.retries,
+        retryDelay: options.retryDelay ?? this.config.retryDelay,
+        responseType: options.accept === "bytes" ? "binary" : "json",
+      });
 
       // Convert Uint8Array back to Buffer for backward compatibility
       let data = response.data;
@@ -328,10 +319,7 @@ export class HttpClient {
 
       const normalizedFiles = files.map((file) => ({
         name: file.name,
-        data:
-          file.data instanceof ReadableStream
-            ? file.data
-            : this.toUint8Array(file.data),
+        data: file.data instanceof ReadableStream ? file.data : this.toUint8Array(file.data),
         filename: file.filename,
         contentType: file.contentType,
         size: file.size,
@@ -553,7 +541,9 @@ export class HttpClient {
     } & Omit<HttpRequestOptions, "method" | "body"> = {}
   ): Promise<HttpResponse<T>> {
     if (!isNode()) {
-      throw new Error("uploadFileStream is only available in Node.js. Use uploadFiles with Uint8Array instead.");
+      throw new Error(
+        "uploadFileStream is only available in Node.js. Use uploadFiles with Uint8Array instead."
+      );
     }
 
     // Dynamic import for Node.js fs
@@ -609,7 +599,9 @@ export class HttpClient {
       if (response.fileStream && isNode()) {
         const { Readable } = await import("node:stream");
         // Cast to unknown first to avoid type incompatibility between Web and Node.js ReadableStream
-        fileStream = Readable.fromWeb(response.fileStream as unknown as import("stream/web").ReadableStream);
+        fileStream = Readable.fromWeb(
+          response.fileStream as unknown as import("stream/web").ReadableStream
+        );
       }
 
       return {
@@ -728,7 +720,9 @@ export class HttpClient {
   /**
    * Normalize body for platform client
    */
-  private normalizeBody(body: BodyInit | unknown): string | Uint8Array | FormData | ReadableStream<Uint8Array> {
+  private normalizeBody(
+    body: BodyInit | unknown
+  ): string | Uint8Array | FormData | ReadableStream<Uint8Array> {
     if (body instanceof FormData) {
       return body;
     }
@@ -853,11 +847,7 @@ export class HttpClient {
       // Check for network error with status code
       const errWithStatus = error as Error & { statusCode?: number; data?: unknown };
       if (errWithStatus.statusCode !== undefined) {
-        return new DoclingNetworkError(
-          error.message,
-          errWithStatus.statusCode,
-          errWithStatus.data
-        );
+        return new DoclingNetworkError(error.message, errWithStatus.statusCode, errWithStatus.data);
       }
 
       return error;

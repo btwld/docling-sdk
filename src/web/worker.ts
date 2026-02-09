@@ -5,21 +5,25 @@
  */
 
 import {
-  env,
-  AutoProcessor,
   AutoModelForVision2Seq,
+  AutoProcessor,
   TextStreamer,
+  env,
   load_image,
 } from "@huggingface/transformers";
 
+import type {
+  DoclingWebConfig,
+  WorkerMessageFromWorker,
+  WorkerMessageToWorker,
+} from "../types/web";
 import { createCustomCache } from "./cache";
 import { doclingToHtml } from "./converters/html-converter";
 import { doclingToJson } from "./converters/json-converter";
 import { doclingToMarkdown } from "./converters/markdown-converter";
 import { doclingToPlainText } from "./converters/text-converter";
-import { extractTables } from "./extractors/table-extractor";
 import { extractOverlays } from "./extractors/overlay-extractor";
-import type { WorkerMessageToWorker, WorkerMessageFromWorker, DoclingWebConfig } from "../types/web";
+import { extractTables } from "./extractors/table-extractor";
 
 // Worker global scope type (avoids needing WebWorker lib in tsconfig)
 declare const self: {
@@ -138,10 +142,7 @@ async function processImage(src: string, maxNewTokens = 4096): Promise<void> {
   const messages: any[] = [
     {
       role: "user",
-      content: [
-        { type: "image" },
-        { type: "text", text: "Convert this page to docling." },
-      ],
+      content: [{ type: "image" }, { type: "text", text: "Convert this page to docling." }],
     },
   ];
 
@@ -190,28 +191,34 @@ async function processImage(src: string, maxNewTokens = 4096): Promise<void> {
   });
 }
 
-self.onmessage = async (event: MessageEvent<WorkerMessageToWorker>) => {
-  const { type } = event.data;
+type WorkerHandlerMap = {
+  [K in WorkerMessageToWorker["type"]]: (
+    data: Extract<WorkerMessageToWorker, { type: K }>
+  ) => Promise<void>;
+};
 
-  try {
-    switch (type) {
-      case "INIT": {
-        setupCache();
-        await loadModel(event.data.config);
-        break;
-      }
-
-      case "PROCESS_FILE": {
-        if (!isInitialized) {
-          throw new Error("Worker not initialized. Send INIT message first.");
-        }
-        await processImage(event.data.src, event.data.maxNewTokens);
-        break;
-      }
-
-      default:
-        throw new Error(`Unknown message type: ${type}`);
+const MESSAGE_HANDLERS: WorkerHandlerMap = {
+  INIT: async (data) => {
+    setupCache();
+    await loadModel(data.config);
+  },
+  PROCESS_FILE: async (data) => {
+    if (!isInitialized) {
+      throw new Error("Worker not initialized. Send INIT message first.");
     }
+    await processImage(data.src, data.maxNewTokens);
+  },
+};
+
+self.onmessage = async (event: MessageEvent<WorkerMessageToWorker>) => {
+  try {
+    const handler = MESSAGE_HANDLERS[event.data.type] as
+      | ((data: WorkerMessageToWorker) => Promise<void>)
+      | undefined;
+    if (!handler) {
+      throw new Error(`Unknown message type: ${event.data.type}`);
+    }
+    await handler(event.data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     postTypedMessage({ type: "ERROR", error: message });

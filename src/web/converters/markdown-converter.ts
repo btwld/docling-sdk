@@ -5,6 +5,8 @@
  * Ported from web-ocr/packages/docling-client/src/markdown-converter.ts
  */
 
+const EMPTY_CELL_TAGS = new Set(["lcel", "ucel", "xcel"]);
+
 function cleanLocationTokens(content: string): string {
   return content.replace(/<loc_\d+>/g, "").trim();
 }
@@ -29,16 +31,7 @@ function parseTableToMarkdown(content: string): string {
       const tag = parts[i];
       const cellContent = cleanLocationTokens(parts[i + 1] ?? "");
 
-      switch (tag) {
-        case "lcel":
-        case "ucel":
-        case "xcel":
-          cells.push("");
-          break;
-        default:
-          cells.push(cellContent);
-          break;
-      }
+      cells.push(EMPTY_CELL_TAGS.has(tag ?? "") ? "" : cellContent);
     }
 
     maxCols = Math.max(maxCols, cells.length);
@@ -67,32 +60,30 @@ function parseTableToMarkdown(content: string): string {
   return lines.join("\n");
 }
 
+const INLINE_HANDLERS: Record<string, (content: string) => string> = {
+  code: (c) => `\`${c}\``,
+  formula: (c) => `$${c}$`,
+  smiles: (c) => `\`${c}\``,
+  text: (c) => c,
+};
+
 function processInlineContent(content: string): string {
   const inlineTagRegex = /<(code|formula|text|smiles)>([\s\S]*?)<\/\1>/g;
   let result = "";
   let lastIndex = 0;
 
-  for (let match = inlineTagRegex.exec(content); match !== null; match = inlineTagRegex.exec(content)) {
+  for (
+    let match = inlineTagRegex.exec(content);
+    match !== null;
+    match = inlineTagRegex.exec(content)
+  ) {
     const textBefore = content.slice(lastIndex, match.index);
     result += cleanLocationTokens(textBefore);
 
     const [, tagName, innerContent] = match;
     const cleanInner = cleanLocationTokens(innerContent ?? "");
-
-    switch (tagName) {
-      case "code":
-        result += `\`${cleanInner}\``;
-        break;
-      case "formula":
-        result += `$${cleanInner}$`;
-        break;
-      case "smiles":
-        result += `\`${cleanInner}\``;
-        break;
-      default:
-        result += cleanInner;
-        break;
-    }
+    const handler = INLINE_HANDLERS[tagName ?? ""];
+    result += handler ? handler(cleanInner) : cleanInner;
 
     lastIndex = match.index + match[0].length;
   }
@@ -101,117 +92,101 @@ function processInlineContent(content: string): string {
   return result;
 }
 
+type TagHandler = (tagName: string, content: string, cleanContent: string) => string;
+
+function handleMarkdownCode(_t: string, content: string): string {
+  const langMatch = content.match(/<_([^_]+)_>/);
+  const language = langMatch ? langMatch[1] : "";
+  const codeContent = cleanLocationTokens(content.replace(/<_[^_]+_>/, "")).trim();
+  return `\`\`\`${language}\n${codeContent}\n\`\`\`\n\n`;
+}
+
+function handleMarkdownFormula(_t: string, _c: string, clean: string): string {
+  if (clean.includes("\n") || clean.length > 50) {
+    return `$$\n${clean}\n$$\n\n`;
+  }
+  return `$${clean}$\n\n`;
+}
+
+function handleMarkdownOrderedList(_t: string, content: string): string {
+  const items: string[] = [];
+  const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
+  let index = 1;
+  for (
+    let match = listItemRegex.exec(content);
+    match !== null;
+    match = listItemRegex.exec(content)
+  ) {
+    const itemContent = cleanLocationTokens(match[1] ?? "")
+      .replace(/^[·\-]\s*/, "")
+      .trim();
+    items.push(`${index}. ${itemContent}`);
+    index++;
+  }
+  return `${items.join("\n")}\n\n`;
+}
+
+function handleMarkdownUnorderedList(_t: string, content: string): string {
+  const items: string[] = [];
+  const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
+  for (
+    let match = listItemRegex.exec(content);
+    match !== null;
+    match = listItemRegex.exec(content)
+  ) {
+    const itemContent = cleanLocationTokens(match[1] ?? "")
+      .replace(/^[·\-]\s*/, "")
+      .trim();
+    items.push(`- ${itemContent}`);
+  }
+  return `${items.join("\n")}\n\n`;
+}
+
+function handleMarkdownPictureOrChart(tagName: string, content: string): string {
+  const captionMatch = content.match(/<caption>([\s\S]*?)<\/caption>/);
+  const caption = captionMatch ? cleanLocationTokens(captionMatch[1] ?? "") : tagName;
+  return `![${caption}]()\n\n`;
+}
+
+const textOrParagraph: TagHandler = (_t, _c, clean) => `${clean}\n\n`;
+
+const MARKDOWN_TAG_HANDLERS: Record<string, TagHandler> = {
+  doctag: (_t, content) => convertDocTags(content),
+  document: (_t, content) => convertDocTags(content),
+  title: (_t, _c, clean) => `# ${clean}\n\n`,
+  section_header_level_0: (_t, _c, clean) => `## ${clean}\n\n`,
+  section_header_level_1: (_t, _c, clean) => `### ${clean}\n\n`,
+  section_header_level_2: (_t, _c, clean) => `#### ${clean}\n\n`,
+  section_header_level_3: (_t, _c, clean) => `##### ${clean}\n\n`,
+  section_header_level_4: (_t, _c, clean) => `###### ${clean}\n\n`,
+  section_header_level_5: (_t, _c, clean) => `###### ${clean}\n\n`,
+  text: textOrParagraph,
+  paragraph: textOrParagraph,
+  code: handleMarkdownCode,
+  formula: handleMarkdownFormula,
+  otsl: (_t, content) => `${parseTableToMarkdown(content)}\n\n`,
+  picture: handleMarkdownPictureOrChart,
+  chart: handleMarkdownPictureOrChart,
+  ordered_list: handleMarkdownOrderedList,
+  unordered_list: handleMarkdownUnorderedList,
+  list_item: (_t, _c, clean) => `- ${clean.replace(/^[·\-]\s*/, "").trim()}\n`,
+  caption: (_t, _c, clean) => `*${clean}*\n\n`,
+  footnote: (_t, _c, clean) => `[^note]: ${clean}\n\n`,
+  page_header: () => "",
+  page_footer: () => "",
+  page_break: () => "\n---\n\n",
+  checkbox_selected: () => "- [x] ",
+  checkbox_unselected: () => "- [ ] ",
+  inline: (_t, content) => processInlineContent(content),
+};
+
 function processTag(tagName: string, content: string): string {
   const cleanContent = cleanLocationTokens(content);
-
-  switch (tagName) {
-    case "doctag":
-    case "document":
-      return convertDocTags(content);
-
-    case "title":
-      return `# ${cleanContent}\n\n`;
-
-    case "section_header_level_0":
-      return `## ${cleanContent}\n\n`;
-
-    case "section_header_level_1":
-      return `### ${cleanContent}\n\n`;
-
-    case "section_header_level_2":
-      return `#### ${cleanContent}\n\n`;
-
-    case "section_header_level_3":
-      return `##### ${cleanContent}\n\n`;
-
-    case "section_header_level_4":
-    case "section_header_level_5":
-      return `###### ${cleanContent}\n\n`;
-
-    case "text":
-    case "paragraph":
-      return `${cleanContent}\n\n`;
-
-    case "code": {
-      const langMatch = content.match(/<_([^_]+)_>/);
-      const language = langMatch ? langMatch[1] : "";
-      const codeContent = cleanLocationTokens(content.replace(/<_[^_]+_>/, "")).trim();
-      return `\`\`\`${language}\n${codeContent}\n\`\`\`\n\n`;
-    }
-
-    case "formula": {
-      const formulaText = cleanContent;
-      if (formulaText.includes("\n") || formulaText.length > 50) {
-        return `$$\n${formulaText}\n$$\n\n`;
-      }
-      return `$${formulaText}$\n\n`;
-    }
-
-    case "otsl":
-      return `${parseTableToMarkdown(content)}\n\n`;
-
-    case "picture":
-    case "chart": {
-      const captionMatch = content.match(/<caption>([\s\S]*?)<\/caption>/);
-      const caption = captionMatch ? cleanLocationTokens(captionMatch[1] ?? "") : tagName;
-      return `![${caption}]()\n\n`;
-    }
-
-    case "ordered_list": {
-      const items: string[] = [];
-      const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
-      let index = 1;
-      for (let match = listItemRegex.exec(content); match !== null; match = listItemRegex.exec(content)) {
-        const itemContent = cleanLocationTokens(match[1] ?? "").replace(/^[·\-]\s*/, "").trim();
-        items.push(`${index}. ${itemContent}`);
-        index++;
-      }
-      return `${items.join("\n")}\n\n`;
-    }
-
-    case "unordered_list": {
-      const items: string[] = [];
-      const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
-      for (let match = listItemRegex.exec(content); match !== null; match = listItemRegex.exec(content)) {
-        const itemContent = cleanLocationTokens(match[1] ?? "").replace(/^[·\-]\s*/, "").trim();
-        items.push(`- ${itemContent}`);
-      }
-      return `${items.join("\n")}\n\n`;
-    }
-
-    case "list_item": {
-      const itemContent = cleanContent.replace(/^[·\-]\s*/, "").trim();
-      return `- ${itemContent}\n`;
-    }
-
-    case "caption":
-      return `*${cleanContent}*\n\n`;
-
-    case "footnote":
-      return `[^note]: ${cleanContent}\n\n`;
-
-    case "page_header":
-    case "page_footer":
-      return "";
-
-    case "page_break":
-      return "\n---\n\n";
-
-    case "checkbox_selected":
-      return "- [x] ";
-
-    case "checkbox_unselected":
-      return "- [ ] ";
-
-    case "inline":
-      return processInlineContent(content);
-
-    default:
-      if (cleanContent) {
-        return `${cleanContent}\n\n`;
-      }
-      return "";
+  const handler = MARKDOWN_TAG_HANDLERS[tagName];
+  if (handler) {
+    return handler(tagName, content, cleanContent);
   }
+  return cleanContent ? `${cleanContent}\n\n` : "";
 }
 
 function convertDocTags(input: string): string {

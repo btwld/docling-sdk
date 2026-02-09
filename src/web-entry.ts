@@ -88,6 +88,4 @@ export type {
   RenderedPage,
 } from "./types/web";
 
-export type {
-  DoclingWeb,
-} from "./types/client";
+export type { DoclingWeb } from "./types/client";

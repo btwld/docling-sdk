@@ -4,12 +4,6 @@ import type { ChunkService } from "../services/chunk";
 import type { FileService } from "../services/file";
 import type { Result } from "../utils/result";
 import type {
-  ImageInput,
-  WebClientEvents,
-  WebOCRResult,
-  WebProcessOptions,
-} from "./web";
-import type {
   AcceleratorOptions,
   AsyncChunkTask,
   AsyncConversionTask,
@@ -37,6 +31,7 @@ import type {
   TargetConversionResult,
   TaskStatusResponse,
 } from "./api";
+import type { ImageInput, WebClientEvents, WebOCRResult, WebProcessOptions } from "./web";
 
 /**
  * Progress update data
@@ -646,10 +641,7 @@ export interface DoclingWeb extends DoclingClientBase {
 
   processImage(input: ImageInput, options?: WebProcessOptions): Promise<WebOCRResult>;
 
-  on<K extends keyof WebClientEvents>(
-    event: K,
-    callback: (data: WebClientEvents[K]) => void
-  ): this;
+  on<K extends keyof WebClientEvents>(event: K, callback: (data: WebClientEvents[K]) => void): this;
   off<K extends keyof WebClientEvents>(
     event: K,
     callback: (data: WebClientEvents[K]) => void

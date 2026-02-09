@@ -9,6 +9,9 @@ export class DoclingConverter {
   private TABLE_TAG_CONFIG: Record<string, { htmlTag: string; scope?: string }>;
   private TABLE_TAG_REGEX: RegExp;
   private combinedTagRegex: RegExp;
+  private startTagOverrides: Record<string, string>;
+  private inlineTagConverters: Record<string, (content: string) => string>;
+  private tagConverters: Record<string, (content: string) => string>;
 
   constructor() {
     this.simpleTagMap = {
@@ -53,9 +56,48 @@ export class DoclingConverter {
       "<xcel>": { htmlTag: "td" },
     };
 
-    this.TABLE_TAG_REGEX = new RegExp(
-      `(${Object.keys(this.TABLE_TAG_CONFIG).join("|")})`
-    );
+    this.TABLE_TAG_REGEX = new RegExp(`(${Object.keys(this.TABLE_TAG_CONFIG).join("|")})`);
+
+    this.startTagOverrides = {
+      doctag: '<div class="docling-document">',
+      document: '<div class="docling-document">',
+      formula: '<div class="formula">',
+      document_index: '<div class="toc">',
+      smiles: '<span class="smiles">',
+      reference: '<a href="#">',
+    };
+
+    this.tagConverters = {
+      code: (content) => this.convertBlockCode(content),
+      otsl: (content) => this.convertTable(content),
+      picture: (content) => this.convertPictureOrChart("picture", content),
+      chart: (content) => this.convertPictureOrChart("chart", content),
+      inline: (content) => this.convertInlineContent(content),
+    };
+    for (let i = 0; i <= 5; i++) {
+      this.tagConverters[`section_header_level_${i}`] = (content) => {
+        const level = i + 1;
+        return `<h${level}>${this.processTags(content)}</h${level}>`;
+      };
+    }
+
+    this.inlineTagConverters = {
+      code: (innerContent) => {
+        const langRegex = /<_(.*?)_>/;
+        const langMatch = innerContent.match(langRegex);
+        if (langMatch?.[1]) {
+          const language = this.sanitizeLanguageName(langMatch[1]);
+          const codeContent = innerContent.replace(langRegex, "").trim();
+          const escapedCode = this.escapeHtml(codeContent);
+          const langClass = language !== "unknown" ? ` class="language-${language}"` : "";
+          return `<code${langClass}>${escapedCode}</code>`;
+        }
+        return `<code>${this.escapeHtml(innerContent)}</code>`;
+      },
+      formula: (innerContent) => `<span class="formula">${this.escapeHtml(innerContent)}</span>`,
+      smiles: (innerContent) => `<span class="smiles">${this.escapeHtml(innerContent)}</span>`,
+      text: (innerContent) => this.escapeHtml(innerContent),
+    };
 
     const selfClosingNames = Object.keys(this.selfClosingTagMap).join("|");
     this.combinedTagRegex = new RegExp(
@@ -113,58 +155,27 @@ export class DoclingConverter {
   }
 
   private convertSingleTag(tagName: string, rawContent: string): string {
-    const content = tagName === "list_item"
-      ? rawContent.trim().replace(/^[·-]\s*/g, "")
-      : rawContent;
+    const content =
+      tagName === "list_item" ? rawContent.trim().replace(/^[·-]\s*/g, "") : rawContent;
 
-    switch (tagName) {
-      case "code":
-        return this.convertBlockCode(content);
-      case "otsl":
-        return this.convertTable(content);
-      case "picture":
-      case "chart":
-        return this.convertPictureOrChart(tagName, content);
-      case "inline":
-        return this.convertInlineContent(content);
-      case "section_header_level_0":
-      case "section_header_level_1":
-      case "section_header_level_2":
-      case "section_header_level_3":
-      case "section_header_level_4":
-      case "section_header_level_5": {
-        const level = Number.parseInt(tagName.at(-1) ?? "0", 10) + 1;
-        return `<h${level}>${this.processTags(content)}</h${level}>`;
-      }
-      default: {
-        const htmlTag = this.simpleTagMap[tagName];
-        if (htmlTag) {
-          const processedContent = this.processTags(content);
-          const startTag = this.getStartTag(tagName, htmlTag);
-          return `${startTag}${processedContent}</${htmlTag}>`;
-        }
-        console.warn(`Unknown tag encountered: ${tagName}, escaping it.`);
-        return this.escapeHtml(`<${tagName}>${content}</${tagName}>`);
-      }
+    const converter = this.tagConverters[tagName];
+    if (converter) {
+      return converter(content);
     }
+
+    const htmlTag = this.simpleTagMap[tagName];
+    if (htmlTag) {
+      const processedContent = this.processTags(content);
+      const startTag = this.getStartTag(tagName, htmlTag);
+      return `${startTag}${processedContent}</${htmlTag}>`;
+    }
+
+    console.warn(`Unknown tag encountered: ${tagName}, escaping it.`);
+    return this.escapeHtml(`<${tagName}>${content}</${tagName}>`);
   }
 
   private getStartTag(doclingTag: string, htmlTag: string): string {
-    switch (doclingTag) {
-      case "doctag":
-      case "document":
-        return '<div class="docling-document">';
-      case "formula":
-        return '<div class="formula">';
-      case "document_index":
-        return '<div class="toc">';
-      case "smiles":
-        return '<span class="smiles">';
-      case "reference":
-        return '<a href="#">';
-      default:
-        return `<${htmlTag}>`;
-    }
+    return this.startTagOverrides[doclingTag] ?? `<${htmlTag}>`;
   }
 
   private convertInlineContent(content: string): string {
@@ -181,30 +192,9 @@ export class DoclingConverter {
 
         const [fullMatch, tagName, innerContent] = match;
 
-        switch (tagName) {
-          case "code": {
-            const langRegex = /<_(.*?)_>/;
-            const langMatch = innerContent?.match(langRegex);
-            if (langMatch?.[1]) {
-              const language = this.sanitizeLanguageName(langMatch[1]);
-              const codeContent = (innerContent ?? "").replace(langRegex, "").trim();
-              const escapedCode = this.escapeHtml(codeContent);
-              const langClass = language !== "unknown" ? ` class="language-${language}"` : "";
-              result += `<code${langClass}>${escapedCode}</code>`;
-            } else {
-              result += `<code>${this.escapeHtml(innerContent ?? "")}</code>`;
-            }
-            break;
-          }
-          case "formula":
-            result += `<span class="formula">${this.escapeHtml(innerContent ?? "")}</span>`;
-            break;
-          case "smiles":
-            result += `<span class="smiles">${this.escapeHtml(innerContent ?? "")}</span>`;
-            break;
-          case "text":
-            result += this.escapeHtml(innerContent ?? "");
-            break;
+        const converter = this.inlineTagConverters[tagName ?? ""];
+        if (converter) {
+          result += converter(innerContent ?? "");
         }
 
         remainingText = remainingText.substring(match.index + fullMatch.length);

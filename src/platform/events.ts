@@ -156,7 +156,9 @@ export class CrossEventEmitter<Events extends EventMap = EventMap> {
 /**
  * Create a new CrossEventEmitter instance
  */
-export function createEventEmitter<Events extends EventMap = EventMap>(): CrossEventEmitter<Events> {
+export function createEventEmitter<
+  Events extends EventMap = EventMap,
+>(): CrossEventEmitter<Events> {
   return new CrossEventEmitter<Events>();
 }
 

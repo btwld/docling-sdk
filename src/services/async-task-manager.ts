@@ -4,8 +4,8 @@
  * Reusable across API, CLI, and other contexts
  */
 
-import { CrossEventEmitter } from "../platform/events";
 import type { HttpClient } from "../api/http";
+import { CrossEventEmitter } from "../platform/events";
 
 /**
  * Task status from the API
@@ -329,9 +329,7 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
 
         const requestDuration = Date.now() - requestStart;
         const delay =
-          requestDuration < 5000
-            ? Math.min(task.options.pollInterval, waitSeconds * 1000)
-            : 1000; // Minimal delay if server did proper long polling
+          requestDuration < 5000 ? Math.min(task.options.pollInterval, waitSeconds * 1000) : 1000; // Minimal delay if server did proper long polling
 
         task.pollTimer = globalThis.setTimeout(poll, delay);
       } catch (error) {

@@ -28,7 +28,10 @@ function resetRefCounter(): void {
   refCounter = 0;
 }
 
-function parseLocationToken(content: string): { bbox: WebOCRBoundingBox | null; cleanContent: string } {
+function parseLocationToken(content: string): {
+  bbox: WebOCRBoundingBox | null;
+  cleanContent: string;
+} {
   const locRegex = /<loc_(\d+)>/g;
   const matches = [...content.matchAll(locRegex)];
   const cleanContent = content.replace(locRegex, "").trim();
@@ -153,6 +156,132 @@ function parseNextTag(input: string): ParsedTag | null {
   return null;
 }
 
+interface JsonTagContext {
+  tag: ParsedTag;
+  cleanContent: string;
+  prov: WebOCRProvenanceItem[];
+  texts: WebOCRTextItem[];
+  tables: WebOCRTableItem[];
+  pictures: WebOCRPictureItem[];
+  bodyChildren: WebOCRContentItem[];
+}
+
+function pushTextItem(
+  ctx: JsonTagContext,
+  label: WebOCRTextItem["label"],
+  overrides?: Partial<WebOCRTextItem>
+): void {
+  const ref = generateRef();
+  const item: WebOCRTextItem = {
+    self_ref: ref,
+    parent: { $ref: "#/body" },
+    children: [],
+    label,
+    prov: ctx.prov,
+    orig: ctx.cleanContent,
+    text: ctx.cleanContent,
+    ...overrides,
+  };
+  ctx.texts.push(item);
+  ctx.bodyChildren.push({ $ref: ref });
+}
+
+function handleJsonSectionHeader(ctx: JsonTagContext): void {
+  const level = Number.parseInt(ctx.tag.tagName.slice(-1), 10) + 1;
+  pushTextItem(ctx, "section_header", { level });
+}
+
+function handleJsonLabeledText(ctx: JsonTagContext): void {
+  pushTextItem(ctx, ctx.tag.tagName as WebOCRTextItem["label"]);
+}
+
+function handleJsonPicture(ctx: JsonTagContext): void {
+  const captionMatch = ctx.tag.content.match(/<caption>([\s\S]*?)<\/caption>/);
+  const caption = captionMatch ? captionMatch[1]?.replace(/<loc_\d+>/g, "").trim() : undefined;
+
+  const ref = `#/pictures/${ctx.pictures.length}`;
+  const item: WebOCRPictureItem = {
+    self_ref: ref,
+    parent: { $ref: "#/body" },
+    children: [],
+    label: ctx.tag.tagName === "chart" ? "chart" : "picture",
+    prov: ctx.prov,
+    caption,
+  };
+  ctx.pictures.push(item);
+  ctx.bodyChildren.push({ $ref: ref });
+}
+
+function handleJsonList(ctx: JsonTagContext): void {
+  const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
+  for (
+    let listMatch = listItemRegex.exec(ctx.tag.content);
+    listMatch !== null;
+    listMatch = listItemRegex.exec(ctx.tag.content)
+  ) {
+    const { cleanContent: listItemContent } = parseLocationToken(listMatch[1] ?? "");
+    const itemText = listItemContent.replace(/^[·\-]\s*/, "").trim();
+    const ref = generateRef();
+    const item: WebOCRTextItem = {
+      self_ref: ref,
+      parent: { $ref: "#/body" },
+      children: [],
+      label: "list_item",
+      prov: [],
+      orig: itemText,
+      text: itemText,
+      enumerated: ctx.tag.tagName === "ordered_list",
+    };
+    ctx.texts.push(item);
+    ctx.bodyChildren.push({ $ref: ref });
+  }
+}
+
+const JSON_TAG_HANDLERS: Record<string, (ctx: JsonTagContext) => void> = {
+  doctag: (ctx) =>
+    processDocTags(ctx.tag.content, ctx.texts, ctx.tables, ctx.pictures, ctx.bodyChildren),
+  document: (ctx) =>
+    processDocTags(ctx.tag.content, ctx.texts, ctx.tables, ctx.pictures, ctx.bodyChildren),
+  title: (ctx) => pushTextItem(ctx, "title"),
+  section_header_level_0: handleJsonSectionHeader,
+  section_header_level_1: handleJsonSectionHeader,
+  section_header_level_2: handleJsonSectionHeader,
+  section_header_level_3: handleJsonSectionHeader,
+  section_header_level_4: handleJsonSectionHeader,
+  section_header_level_5: handleJsonSectionHeader,
+  text: (ctx) => pushTextItem(ctx, "text"),
+  paragraph: (ctx) => pushTextItem(ctx, "text"),
+  code: (ctx) => {
+    const langMatch = ctx.cleanContent.match(/<_([^_]+)_>/);
+    const language = langMatch ? langMatch[1] : undefined;
+    const codeText = ctx.cleanContent.replace(/<_[^_]+_>/, "").trim();
+    pushTextItem(ctx, "code", { orig: codeText, text: codeText, language });
+  },
+  formula: (ctx) => pushTextItem(ctx, "formula"),
+  otsl: (ctx) => {
+    const tableData = parseTableContent(ctx.tag.content);
+    const ref = `#/tables/${ctx.tables.length}`;
+    const item: WebOCRTableItem = {
+      self_ref: ref,
+      parent: { $ref: "#/body" },
+      children: [],
+      label: "table",
+      prov: ctx.prov,
+      data: tableData,
+    };
+    ctx.tables.push(item);
+    ctx.bodyChildren.push({ $ref: ref });
+  },
+  picture: handleJsonPicture,
+  chart: handleJsonPicture,
+  ordered_list: handleJsonList,
+  unordered_list: handleJsonList,
+  caption: handleJsonLabeledText,
+  footnote: handleJsonLabeledText,
+  page_header: handleJsonLabeledText,
+  page_footer: handleJsonLabeledText,
+};
+
 function processDocTags(
   doctags: string,
   texts: WebOCRTextItem[],
@@ -174,199 +303,13 @@ function processDocTags(
 
     const { bbox, cleanContent } = parseLocationToken(tag.content);
     const prov = createProvenance(bbox);
+    const ctx: JsonTagContext = { tag, cleanContent, prov, texts, tables, pictures, bodyChildren };
 
-    switch (tag.tagName) {
-      case "doctag":
-      case "document":
-        processDocTags(tag.content, texts, tables, pictures, bodyChildren);
-        break;
-
-      case "title": {
-        const ref = generateRef();
-        const item: WebOCRTextItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: "title",
-          prov,
-          orig: cleanContent,
-          text: cleanContent,
-        };
-        texts.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "section_header_level_0":
-      case "section_header_level_1":
-      case "section_header_level_2":
-      case "section_header_level_3":
-      case "section_header_level_4":
-      case "section_header_level_5": {
-        const level = Number.parseInt(tag.tagName.slice(-1), 10) + 1;
-        const ref = generateRef();
-        const item: WebOCRTextItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: "section_header",
-          prov,
-          orig: cleanContent,
-          text: cleanContent,
-          level,
-        };
-        texts.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "text":
-      case "paragraph": {
-        const ref = generateRef();
-        const item: WebOCRTextItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: "text",
-          prov,
-          orig: cleanContent,
-          text: cleanContent,
-        };
-        texts.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "code": {
-        const langMatch = cleanContent.match(/<_([^_]+)_>/);
-        const language = langMatch ? langMatch[1] : undefined;
-        const codeText = cleanContent.replace(/<_[^_]+_>/, "").trim();
-
-        const ref = generateRef();
-        const item: WebOCRTextItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: "code",
-          prov,
-          orig: codeText,
-          text: codeText,
-          language,
-        };
-        texts.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "formula": {
-        const ref = generateRef();
-        const item: WebOCRTextItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: "formula",
-          prov,
-          orig: cleanContent,
-          text: cleanContent,
-        };
-        texts.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "otsl": {
-        const tableData = parseTableContent(tag.content);
-        const ref = `#/tables/${tables.length}`;
-        const item: WebOCRTableItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: "table",
-          prov,
-          data: tableData,
-        };
-        tables.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "picture":
-      case "chart": {
-        const captionMatch = tag.content.match(/<caption>([\s\S]*?)<\/caption>/);
-        const caption = captionMatch ? captionMatch[1]?.replace(/<loc_\d+>/g, "").trim() : undefined;
-
-        const ref = `#/pictures/${pictures.length}`;
-        const item: WebOCRPictureItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: tag.tagName === "chart" ? "chart" : "picture",
-          prov,
-          caption,
-        };
-        pictures.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      case "ordered_list":
-      case "unordered_list": {
-        const listItemRegex = /<list_item>([\s\S]*?)<\/list_item>/g;
-        for (let listMatch = listItemRegex.exec(tag.content); listMatch !== null; listMatch = listItemRegex.exec(tag.content)) {
-          const { cleanContent: listItemContent } = parseLocationToken(listMatch[1] ?? "");
-          const itemText = listItemContent.replace(/^[·\-]\s*/, "").trim();
-          const ref = generateRef();
-          const item: WebOCRTextItem = {
-            self_ref: ref,
-            parent: { $ref: "#/body" },
-            children: [],
-            label: "list_item",
-            prov: [],
-            orig: itemText,
-            text: itemText,
-            enumerated: tag.tagName === "ordered_list",
-          };
-          texts.push(item);
-          bodyChildren.push({ $ref: ref });
-        }
-        break;
-      }
-
-      case "caption":
-      case "footnote":
-      case "page_header":
-      case "page_footer": {
-        const ref = generateRef();
-        const item: WebOCRTextItem = {
-          self_ref: ref,
-          parent: { $ref: "#/body" },
-          children: [],
-          label: tag.tagName as WebOCRTextItem["label"],
-          prov,
-          orig: cleanContent,
-          text: cleanContent,
-        };
-        texts.push(item);
-        bodyChildren.push({ $ref: ref });
-        break;
-      }
-
-      default:
-        if (cleanContent?.trim()) {
-          const ref = generateRef();
-          const item: WebOCRTextItem = {
-            self_ref: ref,
-            parent: { $ref: "#/body" },
-            children: [],
-            label: "text",
-            prov,
-            orig: cleanContent,
-            text: cleanContent,
-          };
-          texts.push(item);
-          bodyChildren.push({ $ref: ref });
-        }
-        break;
+    const handler = JSON_TAG_HANDLERS[tag.tagName];
+    if (handler) {
+      handler(ctx);
+    } else if (cleanContent?.trim()) {
+      pushTextItem(ctx, "text");
     }
   }
 }

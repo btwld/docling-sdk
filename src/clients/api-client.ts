@@ -1,15 +1,16 @@
 import { HttpClient } from "../api/http";
 import {
+  base64ToUint8Array,
+  isBinary,
   stringToUint8Array,
   uint8ArrayToBase64,
-  isBinary,
-  base64ToUint8Array,
 } from "../platform/binary";
 import { isNode } from "../platform/detection";
 import type { AsyncTaskManager } from "../services/async-task-manager";
 import { ChunkService } from "../services/chunk";
 import { FileService } from "../services/file";
 import { ProgressTracker } from "../services/progress-tracker";
+import { isUserFriendlyS3Config, toOpenApiS3Source, toOpenApiS3Target } from "../types/adapters";
 import type {
   AsyncChunkTask,
   AsyncConversionTask,
@@ -33,11 +34,6 @@ import type {
   TaskStatusResponse,
 } from "../types/api";
 import type { DoclingAPI, DoclingAPIConfig, S3Config } from "../types/client";
-import {
-  toOpenApiS3Source,
-  toOpenApiS3Target,
-  isUserFriendlyS3Config,
-} from "../types/adapters";
 import type {
   ProgressConfig,
   ProgressUpdate,
@@ -793,10 +789,12 @@ export class DoclingAPIClient implements DoclingAPI {
       );
     }
     const { readFile } = await import("node:fs/promises");
+    const { basename } = await import("node:path");
     const fileBuffer = await readFile(filePath);
 
     return await this.convertFile({
       files: new Uint8Array(fileBuffer),
+      filename: basename(filePath),
       ...this.config.defaultOptions,
       ...options,
     });
@@ -807,11 +805,12 @@ export class DoclingAPIClient implements DoclingAPI {
    */
   async convertFromBuffer(
     buffer: Uint8Array,
-    _filename: string,
+    filename: string,
     options: ConversionOptions = {}
   ): Promise<ConvertDocumentResponse> {
     return await this.convertFile({
       files: buffer,
+      filename,
       ...this.config.defaultOptions,
       ...options,
     });
@@ -875,8 +874,7 @@ export class DoclingAPIClient implements DoclingAPI {
       });
 
       const mappedTarget: ConversionTarget =
-        target.kind === "s3" &&
-        isUserFriendlyS3Config(target as unknown as Record<string, unknown>)
+        target.kind === "s3" && isUserFriendlyS3Config(target as unknown as Record<string, unknown>)
           ? toOpenApiS3Target(target as unknown as S3Config)
           : (target as ConversionTarget);
 

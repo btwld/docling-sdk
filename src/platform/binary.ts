@@ -173,11 +173,7 @@ export function equalsBinary(a: Uint8Array, b: Uint8Array): boolean {
 /**
  * Create a view of a Uint8Array without copying
  */
-export function viewBinary(
-  data: Uint8Array,
-  byteOffset: number,
-  byteLength?: number
-): Uint8Array {
+export function viewBinary(data: Uint8Array, byteOffset: number, byteLength?: number): Uint8Array {
   return new Uint8Array(
     data.buffer,
     data.byteOffset + byteOffset,

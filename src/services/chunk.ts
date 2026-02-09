@@ -16,6 +16,27 @@ import { AsyncTaskManager } from "./async-task-manager";
  * Provides clean separation of concerns for chunk-related functionality
  */
 export class ChunkService {
+  private static readonly CONTENT_TYPE_BY_EXT: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    html: "text/html",
+    htm: "text/html",
+    md: "text/markdown",
+    txt: "text/plain",
+    csv: "text/csv",
+    xml: "application/xml",
+    json: "application/json",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    tiff: "image/tiff",
+    tif: "image/tiff",
+  };
+
   private taskManager: AsyncTaskManager;
 
   constructor(private http: HttpClient) {
@@ -492,43 +513,7 @@ export class ChunkService {
    */
   private getContentType(filename: string): string {
     const ext = filename.toLowerCase().split(".").pop();
-    switch (ext) {
-      case "pdf":
-        return "application/pdf";
-      case "docx":
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      case "pptx":
-        return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-      case "xlsx":
-        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      case "html":
-      case "htm":
-        return "text/html";
-      case "md":
-        return "text/markdown";
-      case "txt":
-        return "text/plain";
-      case "csv":
-        return "text/csv";
-      case "xml":
-        return "application/xml";
-      case "json":
-        return "application/json";
-      case "jpg":
-      case "jpeg":
-        return "image/jpeg";
-      case "png":
-        return "image/png";
-      case "gif":
-        return "image/gif";
-      case "bmp":
-        return "image/bmp";
-      case "tiff":
-      case "tif":
-        return "image/tiff";
-      default:
-        return "application/octet-stream";
-    }
+    return (ext && ChunkService.CONTENT_TYPE_BY_EXT[ext]) ?? "application/octet-stream";
   }
 
   /**

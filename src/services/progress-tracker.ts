@@ -3,10 +3,10 @@
  * Uses cross-runtime event emitter and timers
  */
 
-import { CrossEventEmitter } from "../platform/events";
-import { delay } from "../platform/timers";
 import type { HttpClient } from "../api/http";
 import { DoclingWebSocketClient } from "../clients/websocket-client";
+import { CrossEventEmitter } from "../platform/events";
+import { delay } from "../platform/timers";
 import type { ProgressConfig, ProgressUpdate } from "../types/client";
 
 /**

@@ -24,20 +24,14 @@ export function isNode(): boolean {
  * Check if running in Bun
  */
 export function isBun(): boolean {
-  return (
-    typeof globalThis !== "undefined" &&
-    typeof globalThis.Bun !== "undefined"
-  );
+  return typeof globalThis !== "undefined" && typeof globalThis.Bun !== "undefined";
 }
 
 /**
  * Check if running in Deno
  */
 export function isDeno(): boolean {
-  return (
-    typeof globalThis !== "undefined" &&
-    typeof globalThis.Deno !== "undefined"
-  );
+  return typeof globalThis !== "undefined" && typeof globalThis.Deno !== "undefined";
 }
 
 /**
@@ -156,7 +150,8 @@ export function getRuntimeInfo(): {
   } else if (runtime === "bun" && (globalThis as Record<string, unknown>).Bun) {
     version = ((globalThis as Record<string, unknown>).Bun as { version?: string })?.version;
   } else if (runtime === "deno" && (globalThis as Record<string, unknown>).Deno) {
-    version = ((globalThis as Record<string, unknown>).Deno as { version?: { deno?: string } })?.version?.deno;
+    version = ((globalThis as Record<string, unknown>).Deno as { version?: { deno?: string } })
+      ?.version?.deno;
   }
 
   return {

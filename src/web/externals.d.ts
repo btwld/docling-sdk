@@ -4,9 +4,7 @@
  */
 
 declare module "unpdf" {
-  export function getDocumentProxy(
-    data: Uint8Array
-  ): Promise<{
+  export function getDocumentProxy(data: Uint8Array): Promise<{
     numPages: number;
     getPage(pageNum: number): Promise<{
       getViewport(params: { scale: number }): { width: number; height: number };
