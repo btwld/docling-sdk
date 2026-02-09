@@ -3,6 +3,9 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [3.0.0](https://github.com/btwld/docling-sdk/compare/v2.0.0...v3.0.0) (2026-02-09)
+
+
 ## [2.0.0](https://github.com/btwld/docling-sdk/compare/v1.3.6...v2.0.0) (2026-02-09)
 
 ### 🐛 Bug Fixes
