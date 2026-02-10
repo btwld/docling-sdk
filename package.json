@@ -1,6 +1,6 @@
 {
   "name": "docling-sdk",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "TypeScript SDK for Docling - Bridge between Python Docling ecosystem and JavaScript/TypeScript. Supports both CLI and API modes with dual publishing.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -60,7 +60,9 @@
     "README.md",
     "LICENSE"
   ],
-  "sideEffects": ["./dist/web-worker.mjs"],
+  "sideEffects": [
+    "./dist/web-worker.mjs"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
