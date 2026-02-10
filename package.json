@@ -60,7 +60,7 @@
     "README.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": ["./dist/web-worker.mjs"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
