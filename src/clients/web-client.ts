@@ -334,11 +334,18 @@ export class DoclingWebClient implements DoclingWeb {
   }
 
   private createWorkerBlobUrl(): string {
-    const workerCode = `
-      import('docling-sdk/web/worker').catch(err => {
-        self.postMessage({ type: 'ERROR', error: err.message });
-      });
-    `;
+    // Use Function constructor to completely hide the dynamic import() from
+    // bundler static analysis. Bundlers (webpack, rollup, esbuild) parse source
+    // code for import() calls and try to resolve them — even inside strings and
+    // template literals. Using Function() ensures the import() only exists at
+    // runtime inside the blob Worker context.
+    const workerCode = [
+      "self.postMessage||0;", // ensure worker context
+      "const m='docling-sdk/web/worker';",
+      "Function('m','return import(m)')(m).catch(err=>{",
+      "  self.postMessage({type:'ERROR',error:err.message});",
+      "});",
+    ].join("");
     const blob = new Blob([workerCode], { type: "application/javascript" });
     return URL.createObjectURL(blob);
   }
