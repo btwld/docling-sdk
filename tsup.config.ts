@@ -1,14 +1,16 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig([
-  // Main entry point - cross-runtime compatible (Node.js, Bun, Deno, Browser)
+  // Main entries with code splitting - cross-runtime (Node.js, Bun, Deno, Browser)
   {
     entry: {
       index: "src/index.ts",
+      cli: "src/cli-entry.ts",
+      browser: "src/browser-entry.ts",
     },
-    format: ["cjs", "esm"],
-    dts: true,
-    splitting: false,
+    format: ["esm"],
+    dts: false,
+    splitting: true,
     sourcemap: false,
     clean: true,
     minify: true,
@@ -21,57 +23,9 @@ export default defineConfig([
       options.banner = {
         js: '"use strict";',
       };
+      options.legalComments = "none";
+      options.drop = ["console", "debugger"];
     },
-  },
-  // CLI entry point - Node.js only
-  {
-    entry: {
-      cli: "src/cli-entry.ts",
-    },
-    format: ["cjs", "esm"],
-    dts: true,
-    splitting: false,
-    sourcemap: false,
-    clean: false, // Don't clean since main build already did
-    minify: true,
-    target: "es2022",
-    outDir: "dist",
-    treeshake: true,
-    bundle: true,
-    external: ["ws", "archiver", "zod"],
-    platform: "node",
-    esbuildOptions(options) {
-      options.banner = {
-        js: '"use strict";',
-      };
-    },
-  },
-  // Browser entry point - no Node.js dependencies
-  {
-    entry: {
-      browser: "src/browser-entry.ts",
-    },
-    format: ["esm"],
-    dts: true,
-    splitting: false,
-    sourcemap: false,
-    clean: false,
-    minify: true,
-    target: "es2022",
-    outDir: "dist",
-    treeshake: true,
-    bundle: true,
-    external: ["zod"],
-    platform: "browser",
-    define: {
-      "process.env.NODE_ENV": '"production"',
-    },
-    esbuildOptions(options) {
-      options.banner = {
-        js: '"use strict";',
-      };
-    },
-    noExternal: ["ofetch", "mitt"],
   },
   // Web entry point - browser-based OCR (ESM only)
   {
@@ -79,7 +33,7 @@ export default defineConfig([
       web: "src/web-entry.ts",
     },
     format: ["esm"],
-    dts: true,
+    dts: false,
     splitting: false,
     sourcemap: false,
     clean: false,
@@ -97,6 +51,8 @@ export default defineConfig([
       options.banner = {
         js: '"use strict";',
       };
+      options.legalComments = "none";
+      options.drop = ["console", "debugger"];
     },
     noExternal: ["ofetch", "mitt"],
   },
@@ -106,7 +62,7 @@ export default defineConfig([
       "web-worker": "src/web/worker.ts",
     },
     format: ["esm"],
-    dts: true,
+    dts: false,
     splitting: false,
     sourcemap: false,
     clean: false,
@@ -121,6 +77,8 @@ export default defineConfig([
       options.banner = {
         js: '"use strict";',
       };
+      options.legalComments = "none";
+      options.drop = ["console", "debugger"];
     },
   },
 ]);
