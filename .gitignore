@@ -75,8 +75,16 @@ examples/*/output/
 output/
 uploads/
 
-# Documentation build
-docs/
+# TypeDoc generated output (allow docs/*.md)
+docs/*.html
+docs/assets/
+docs/classes/
+docs/enums/
+docs/functions/
+docs/interfaces/
+docs/modules/
+docs/types/
+docs/.nojekyll
 
 # Examples (keeping our reference examples)
 # .examples/
