@@ -2,69 +2,51 @@
   "name": "docling-sdk",
   "version": "2.0.3",
   "description": "TypeScript SDK for Docling - Bridge between Python Docling ecosystem and JavaScript/TypeScript. Supports both CLI and API modes with dual publishing.",
+  "type": "module",
   "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "browser": "./dist/browser.mjs",
-      "bun": "./dist/index.mjs",
-      "deno": "./dist/index.mjs",
-      "node": {
-        "import": "./dist/index.mjs",
-        "require": "./dist/index.js"
-      },
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "default": "./dist/index.mjs"
+      "browser": "./dist/browser.js",
+      "bun": "./dist/index.js",
+      "deno": "./dist/index.js",
+      "node": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./cli": {
-      "types": "./dist/cli.d.ts",
-      "node": {
-        "import": "./dist/cli.mjs",
-        "require": "./dist/cli.js"
-      },
-      "import": "./dist/cli.mjs",
-      "require": "./dist/cli.js"
+      "types": "./dist/cli-entry.d.ts",
+      "import": "./dist/cli.js"
     },
     "./browser": {
-      "types": "./dist/browser.d.ts",
-      "import": "./dist/browser.mjs",
-      "default": "./dist/browser.mjs"
+      "types": "./dist/browser-entry.d.ts",
+      "import": "./dist/browser.js"
     },
     "./web": {
-      "types": "./dist/web.d.mts",
-      "import": "./dist/web.mjs",
-      "default": "./dist/web.mjs"
+      "types": "./dist/web-entry.d.ts",
+      "import": "./dist/web.js"
     },
     "./web/worker": {
-      "import": "./dist/web-worker.mjs",
-      "default": "./dist/web-worker.mjs"
+      "import": "./dist/web-worker.js"
     },
     "./platform": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js"
     }
-  },
-  "browser": {
-    "./dist/index.js": "./dist/browser.mjs",
-    "./dist/index.mjs": "./dist/browser.mjs"
   },
   "files": [
     "dist/**/*.js",
-    "dist/**/*.mjs",
     "dist/**/*.d.ts",
-    "dist/**/*.d.mts",
     "README.md",
     "LICENSE"
   ],
   "sideEffects": [
-    "./dist/web-worker.mjs"
+    "./dist/web-worker.js"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "dev": "tsup --watch",
     "test": "npm run test:unit",
     "test:unit": "vitest run tests/unit",
@@ -156,6 +138,7 @@
     "@vitest/ui": "^2.1.8",
     "openapi-typescript": "^7.10.1",
     "rimraf": "^6.0.1",
+    "tsc-alias": "^1.8.16",
     "tsup": "^8.3.5",
     "tsx": "^4.20.5",
     "typedoc": "^0.27.4",
@@ -164,10 +147,10 @@
     "vitest": "^2.1.8"
   },
   "peerDependencies": {
-    "typescript": ">=4.9.0",
-    "unpdf": ">=0.12.0",
     "@huggingface/transformers": ">=3.0.0",
-    "onnxruntime-web": ">=1.18.0"
+    "onnxruntime-web": ">=1.18.0",
+    "typescript": ">=4.9.0",
+    "unpdf": ">=0.12.0"
   },
   "peerDependenciesMeta": {
     "typescript": {
