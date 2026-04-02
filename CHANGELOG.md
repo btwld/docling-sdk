@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [2.0.5](https://github.com/btwld/docling-sdk/compare/v2.0.4...v2.0.5) (2026-04-02)
+
+### 🔧 Maintenance
+
+- chore(deps): bump @types/node from 22.17.1 to 24.9.1 (#57) (df6c866)
+- chore(actions): bump actions/checkout from 4 to 6 (#59) (8e54354)
+- docs: overhaul documentation with 17 guide files and concise README (9db538e)
+
+
 ## [2.0.4](https://github.com/btwld/docling-sdk/compare/v2.0.3...v2.0.4) (2026-02-11)
 
 ### 🔧 Maintenance
