@@ -121,7 +121,7 @@
   "dependencies": {
     "mitt": "^3.0.1",
     "ofetch": "^1.4.1",
-    "zod": "^4.0.15"
+    "zod": "^4.3.6"
   },
   "optionalDependencies": {
     "archiver": "^7.0.1",
