@@ -416,14 +416,14 @@ export class ChunkService {
   private buildFormFields(
     options: ConversionOptions,
     targetType: "inbody" | "zip"
-  ): Record<string, string> {
-    const fields: Record<string, string> = {
+  ): Record<string, unknown> {
+    const fields: Record<string, unknown> = {
       target_type: targetType,
     };
 
     // Add conversion options
     if (options.from_formats) {
-      fields.convert_from_formats = JSON.stringify(options.from_formats);
+      fields.convert_from_formats = options.from_formats;
     }
     if (options.image_export_mode) {
       fields.convert_image_export_mode = options.image_export_mode;
@@ -438,7 +438,7 @@ export class ChunkService {
       fields.convert_ocr_engine = options.ocr_engine;
     }
     if (options.ocr_lang) {
-      fields.convert_ocr_lang = JSON.stringify(options.ocr_lang);
+      fields.convert_ocr_lang = options.ocr_lang;
     }
     if (options.pdf_backend) {
       fields.convert_pdf_backend = options.pdf_backend;
@@ -453,7 +453,7 @@ export class ChunkService {
       fields.convert_pipeline = options.pipeline;
     }
     if (options.page_range) {
-      fields.convert_page_range = JSON.stringify(options.page_range);
+      fields.convert_page_range = options.page_range;
     }
     if (options.document_timeout !== undefined) {
       fields.convert_document_timeout = String(options.document_timeout);
