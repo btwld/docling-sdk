@@ -125,7 +125,7 @@
   },
   "optionalDependencies": {
     "archiver": "^7.0.1",
-    "ws": "^8.18.0"
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
