@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [2.0.6](https://github.com/btwld/docling-sdk/compare/v2.0.5...v2.0.6) (2026-05-15)
+
+### 🐛 Bug Fixes
+
+- fix(chunk): assign list-typed form fields directly instead of JSON.stringify (#75) (418a8a1)
+
+
 ## [2.0.5](https://github.com/btwld/docling-sdk/compare/v2.0.4...v2.0.5) (2026-04-02)
 
 ### 🔧 Maintenance
