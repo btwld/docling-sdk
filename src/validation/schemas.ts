@@ -129,8 +129,8 @@ export const ImageExportModeSchema = z.enum(["embedded", "placeholder", "referen
   error: "Invalid image export mode. Supported modes: embedded, placeholder, referenced",
 });
 
-export const ProcessingPipelineSchema = z.enum(["default", "fast", "accurate"], {
-  error: "Invalid processing pipeline. Supported pipelines: default, fast, accurate",
+export const ProcessingPipelineSchema = z.enum(["standard", "vlm", "asr" ], {
+  error: "Invalid processing pipeline. Supported pipelines: standard, vlm, asr",
 });
 
 /**
