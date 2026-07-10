@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
 
+## [2.0.7](https://github.com/btwld/docling-sdk/compare/v2.0.6...v2.0.7) (2026-07-10)
+
+### 🔧 Maintenance
+
+- refactor(validation): update ProcessingPipelineSchema enum values (#77) (655f43b)
+
+
 ## [2.0.6](https://github.com/btwld/docling-sdk/compare/v2.0.5...v2.0.6) (2026-05-15)
 
 ### 🐛 Bug Fixes
