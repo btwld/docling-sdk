@@ -55,9 +55,13 @@ const result = await client.convert(input, "document.pdf", { to_formats: ["md"] 
 console.log(result.document.md_content);
 ```
 
-Deno requires `--allow-net` and `--allow-read` for this example. Environment-based
-S3 credentials additionally require `--allow-env`; saving output needs
-`--allow-write`. For ZIP bytes outside Node, use the API client's `convertToFile`
+Deno requires `--allow-net`, `--allow-read` and `--allow-env` for this example.
+The main entry eagerly loads the CLI client and `archiver` at import time, even
+when only `createAPIClient` is used. That dependency chain reads environment
+variables (including `GRACEFUL_FS_PLATFORM`), so importing without `--allow-env`
+fails on Deno 2.9.6 before any API request. Environment-based S3 credentials also
+need env access; saving output needs `--allow-write`.
+For ZIP bytes outside Node, use the API client's `convertToFile`
 and inspect `data`. Async download methods do not provide the same byte fallback;
 see [transfer behavior](streaming.md#method-behavior).
 
