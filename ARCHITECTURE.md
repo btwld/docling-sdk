@@ -2,13 +2,15 @@
 
 Short records of the SDK's execution and compatibility boundaries. Existing
 choices were reconstructed on 2026-10-30; implementation dates are not
-retroactive approvals. Inferred rationale is identified below. Keep current usage
-in the [guides](docs/README.md); record consequential replacements here and mark
-the old section superseded. Ordinary fixes and test-tool defaults need no entry.
+retroactive approvals. Inferred rationale is identified below. Keep specifications,
+contracts, runbooks and usage in their [guides](docs/README.md); record consequential
+replacements here and mark the old section superseded. Each entry has a title,
+date and 1–3 sentences covering the decision, reason and cost; ordinary fixes and
+test-tool defaults need no entry.
 
 ## Client execution modes
 
-*Observed active; implemented by 2026-02-09; rationale reconstructed.*
+Date: 2026-10-30 · Observed active · Reconstructed; implemented by 2026-02-09
 
 API, CLI and Web clients share conversion interfaces while selecting server,
 local Python or browser execution. This keeps client selection explicit but does
@@ -19,7 +21,7 @@ Evidence: [factory](src/docling.ts), [client contracts](src/types/client.ts),
 
 ## Runtime boundaries
 
-*Observed active; implemented 2026-02-09; rationale reconstructed.*
+Date: 2026-02-09 · Observed active · Rationale reconstructed 2026-10-30
 
 Use `Uint8Array`, fetch-based transport and a browser entry excluding the Node CLI
 to support API conversion outside Node. This requires runtime-specific exports
@@ -30,35 +32,32 @@ Evidence: [browser entry](src/browser-entry.ts), [HTTP wrapper](src/api/http.ts)
 
 ## ESM-only packaging
 
-*Observed active; implemented in v2.0.4, 2026-02-11 UTC.*
+Date: 2026-02-11 UTC · Observed active · Implemented in v2.0.4
 
 Publish ESM with shared chunks and separate type declarations to reduce package
-size, as recorded in PR #67. Dropping CommonJS makes consumers migrate from
-`require()` to ESM imports; the PR reports size measurements for the combined
-packaging changes, not for removing CJS alone.
+size, as recorded in PR #67. Consumers must migrate from `require()` to ESM
+imports; the PR's size measurements cover the combined packaging changes.
 
 Evidence: [build](tsup.config.ts), [exports](package.json),
 [PR #67](https://github.com/btwld/docling-sdk/pull/67); supersedes [dual module output](#dual-module-output-superseded).
 
 ## SDK contract and server adapters
 
-*Observed active; scaffold added 2026-02-09; rationale reconstructed.*
+Date: 2026-02-09 · Observed active · Rationale reconstructed 2026-10-30
 
 Keep handwritten SDK types as the public contract and translate convenience
-configuration at the server boundary rather than binding the SDK directly to a
-generated upstream schema. This costs synchronization across types, validators
-and adapters; the exported OpenAPI namespace still contains placeholders.
-
-S3 is one example: adapters rename SDK fields and send credentials/location to
-Docling Serve, which must reach storage. They do not use an AWS credential chain
-or forward the config's `session_token`.
+configuration at the server boundary to decouple callers from the upstream
+schema. This costs synchronization across types, validators and adapters; the
+exported OpenAPI namespace still contains placeholders. S3 follows this boundary,
+with storage access delegated to the server and field limits documented in the
+[S3 guide](docs/s3-integration.md).
 
 Evidence: [SDK types](src/types/api.ts), [placeholder](src/types/generated/api.ts),
 [S3 adapters](src/types/adapters/s3.ts), [type workflow](docs/typescript.md).
 
 ## Conversion and error contracts
 
-*Observed active; direct response introduced by v1.3.1; rationale reconstructed.*
+Date: 2026-10-30 · Observed active · Reconstructed; direct returns by v1.3.1
 
 Ordinary conversion returns a document response; `safeConvert` wraps rejected
 operations for callers preferring Results. File-output methods have a separate
@@ -70,10 +69,11 @@ Evidence: [PR #35](https://github.com/btwld/docling-sdk/pull/35),
 
 ## Async lifecycle and fallback
 
-*Observed active; reconstructed 2026-10-30.*
+Date: 2026-10-30 · Observed active · Reconstructed
 
-Track server task completion separately from progress delivery, with hybrid
-progress trying WebSocket and falling back to HTTP when startup fails or stalls.
+Track server task completion separately from progress delivery so completion
+does not depend on WebSocket updates; hybrid progress falls back to HTTP on
+WebSocket errors or an initial timeout without progress.
 Separate service managers and progress trackers own polling/timers and require
 cleanup; application webhook delivery belongs to the caller.
 
@@ -82,7 +82,7 @@ Evidence: [task manager](src/services/async-task-manager.ts),
 
 ## Browser inference worker
 
-*Observed active; implemented 2026-02-09; rationale reconstructed, packaging clarified by #65–66.*
+Date: 2026-02-09 · Observed active · Rationale reconstructed 2026-10-30; packaging clarified by #65–66
 
 Run Granite inference in a module worker to keep conversion local to the browser
 and off the UI thread. Users must download/cache model assets and manage worker
@@ -94,7 +94,7 @@ Evidence: [worker](src/web/worker.ts), [Cache API storage](src/web/cache.ts),
 
 ## Transfer semantics
 
-*Observed active; reconstructed 2026-10-30; constraints, not a constant-memory guarantee.*
+Date: 2026-10-30 · Observed active · Reconstructed
 
 Expose byte and stream methods for different destinations and runtime needs.
 Some paths buffer multipart input or complete responses, while async download
@@ -106,28 +106,31 @@ Evidence: [transfer table](docs/streaming.md#method-behavior),
 
 ## Workflow-owned versions
 
-*Observed active; replacement introduced 2025-08-13, automatic bumps added 2025-08-21.*
+Date: 2025-08-21 · Observed active · Automatic bumps; workflow introduced 2025-08-13
 
-Use the GitHub Actions release workflow instead of semantic-release, with the
-workflow owning version selection and a manual override. The workflow pushes
-intermediate state, so failed releases require inspecting repository and registry
-state before retrying rather than manually bumping versions again.
+Use the GitHub Actions release workflow instead of semantic-release so version
+selection stays with automation, with a manual override for maintainers. The
+workflow pushes intermediate state, so failed releases require inspecting
+repository and registry state before retrying rather than manually bumping
+versions again.
 
 Evidence: [PR #16](https://github.com/btwld/docling-sdk/pull/16),
 [PR #23](https://github.com/btwld/docling-sdk/pull/23), [release runbook](CONTRIBUTING.md#releases).
 
 ## Dual module output (superseded)
 
-*Superseded 2026-02-11 UTC by [ESM-only packaging](#esm-only-packaging).*
+Date: 2026-02-11 UTC · Superseded by [ESM-only packaging](#esm-only-packaging)
 
-Earlier builds published CJS and ESM. That compatibility promise no longer
-applies; see [PR #67](https://github.com/btwld/docling-sdk/pull/67).
+Earlier builds published CJS and ESM for module-system compatibility, at the
+cost of additional build output. [PR #67](https://github.com/btwld/docling-sdk/pull/67)
+replaced that choice with ESM-only packaging to reduce package size, dropping CJS
+compatibility.
 
 ## Custom Node transport (superseded)
 
-*Superseded 2026-02-09 by [runtime boundaries](#runtime-boundaries).*
+Date: 2026-02-09 · Superseded by [runtime boundaries](#runtime-boundaries)
 
-The old custom Node HTTP connection pool is no longer wired into API requests or
-exported as an SDK configuration API. The retained source file does not describe
-the active transport; see [deprecation](src/api/index.ts) and
-[PR #60](https://github.com/btwld/docling-sdk/pull/60).
+The earlier custom Node connection pool managed socket reuse but tied transport
+to Node. [PR #60](https://github.com/btwld/docling-sdk/pull/60) replaced it with
+fetch-based transport for portability, retiring the pool's configuration API;
+the [retained source](src/api/index.ts) is deprecated.

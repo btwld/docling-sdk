@@ -2,7 +2,7 @@
 
 [Home](../README.md) > Docs
 
-[Core concepts](../README.md) · [Architecture decisions](../ARCHITECTURE.md)
+[Core concepts](../README.md#core-concepts) · [Architecture decisions](../ARCHITECTURE.md)
 
 ## Guides
 
