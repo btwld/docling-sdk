@@ -9,13 +9,21 @@ and a Web OCR client. See [cross-runtime setup](cross-runtime.md) for each mode.
 
 ### Binary inputs
 
-Public conversion signatures use `Uint8Array` in place of Node's `Buffer`.
+The API and Web clients accept `Uint8Array` for binary conversion input.
 Existing Node buffers still work because `Buffer` extends `Uint8Array`.
-Change explicit `Buffer` annotations when sharing code with other runtimes:
+Change explicit `Buffer` annotations when sharing API/Web code with other runtimes:
 
 ```typescript
+import { createAPIClient } from "docling-sdk";
+
+const client = createAPIClient("http://localhost:5001");
 const result = await client.convert(new Uint8Array(data), "doc.pdf");
 ```
+
+The CLI client, including the instance returned by `createCLIClient()`, still
+requires `Buffer | string`. Use `Buffer.from(data)` for binary CLI input or pass
+a file path as a string. A plain `Uint8Array` is not supported by the CLI's
+conversion signatures or its input handling, which checks `Buffer.isBuffer()`.
 
 ### Entry points
 
