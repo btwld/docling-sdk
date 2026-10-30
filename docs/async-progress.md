@@ -2,19 +2,21 @@
 
 [Home](../README.md) > [Docs](./README.md) > Async and Progress
 
-The API client supports asynchronous document processing with task-based workflows, multiple progress tracking modes, and webhook integration.
+The API client submits server tasks and tracks completion separately from
+progress updates. Notifications to application webhooks are caller-owned.
 
 ## Sync vs Async
 
 | Consideration | Sync | Async |
 |--------------|------|-------|
 | Response time | Blocks until complete | Returns task ID immediately |
-| Large documents | May timeout | Handles any size |
+| Large documents | May timeout | Separate submission/waiting; server and client limits still apply |
 | Progress tracking | Not available | WebSocket, HTTP polling, or hybrid |
 | Batch processing | Sequential | Parallel with queue management |
 | Result retrieval | Inline in response | Separate call (JSON or ZIP) |
 
 Use async when:
+
 - Documents are large or processing takes more than a few seconds
 - You need progress updates
 - You want to submit multiple documents and process them in parallel
@@ -188,9 +190,15 @@ const client = new Docling({
 });
 ```
 
-### Hybrid (recommended)
+### Hybrid (default)
 
-Tries WebSocket first, falls back to HTTP polling:
+Tries WebSocket first and falls back to HTTP polling on connection errors or an
+initial period without progress. Task completion polling is separate from
+progress transport selection: the task manager uses `/v1/status/poll/{id}`,
+while progress HTTP polling uses `/v1/status/{id}`.
+
+Use `method: "http"` when the runtime cannot supply a WebSocket implementation.
+To configure hybrid tracking:
 
 ```typescript
 const client = new Docling({
@@ -285,11 +293,14 @@ const ws = new DoclingWebSocketClient({
 
 ## AsyncTaskManager
 
-The `AsyncTaskManager` handles task submission, polling, and event emission:
+The `AsyncTaskManager` handles task submission, polling, and event emission.
+Services create their own instances; there is no process-wide task registry.
+Call `client.destroy()` when finished to stop service polling/timers. A separately
+created progress tracker also needs `stopTracking()`.
+
+Observe the file service manager through the client:
 
 ```typescript
-import { AsyncTaskManager } from "docling-sdk";
-
 const taskManager = client.getTaskManager();
 
 taskManager.on("status", ({ status, taskId }) => {
@@ -321,9 +332,11 @@ interface TaskOptions {
 }
 ```
 
-## Webhook Integration
+## Application-owned notifications
 
-You can implement webhook notifications after task completion:
+The SDK does not deliver webhooks. Its `onWebhook` config field is not invoked by
+the current progress tracker. Your application can send a notification after
+waiting for a task, as below; retries and delivery tracking belong to the caller:
 
 ```typescript
 const task = await client.convertFileAsync({

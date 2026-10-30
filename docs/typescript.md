@@ -2,300 +2,97 @@
 
 [Home](../README.md) > [Docs](./README.md) > TypeScript
 
-The SDK is built with TypeScript strict mode and provides comprehensive type safety across all features.
+The SDK uses TypeScript strict mode. Its public API types are maintained in
+`src/types/api.ts`, with client interfaces in `src/types/client.ts`.
 
-## Type Guards
+## Factories and client types
 
-### Config type guards
-
-Determine which client mode a config object describes:
-
-```typescript
-import { isAPIConfig, isCLIConfig, isWebConfig } from "docling-sdk";
-import type { DoclingConfig } from "docling-sdk";
-
-function handleConfig(config: DoclingConfig) {
-  if (isAPIConfig(config)) {
-    console.log(config.api.baseUrl); // TypeScript knows api exists
-  }
-  if (isCLIConfig(config)) {
-    console.log(config.cli.outputDir); // TypeScript knows cli exists
-  }
-  if (isWebConfig(config)) {
-    console.log(config.web.device); // TypeScript knows web exists
-  }
-}
-```
-
-### Client type guards
-
-Narrow a client instance to its concrete type:
+The Node entry infers a concrete client from the configuration:
 
 ```typescript
-import { Docling, isAPIClient, isCLIClient, isWebClient } from "docling-sdk";
+import { Docling, createAPIClient } from "docling-sdk";
+import type { ConversionOptions, ConvertDocumentResponse } from "docling-sdk";
 
-const client = new Docling(config);
-
-if (isAPIClient(client)) {
-  // DoclingAPIClient -- has health(), convertFile(), etc.
-  await client.health();
-}
-
-if (isCLIClient(client)) {
-  // DoclingCLIClient -- has batch(), watch(), etc.
-  await client.batch(["file1.pdf", "file2.pdf"]);
-}
-
-if (isWebClient(client)) {
-  // DoclingWebClient -- has processImage(), initialize(), etc.
-  await client.initialize();
-}
+const api = createAPIClient("http://localhost:5001");
+const cli = new Docling({ cli: { outputDir: "./output" } });
+const options: ConversionOptions = { to_formats: ["md"] };
 ```
 
-### Conversion result type guards
+The exported interfaces `DoclingClientBase`, `DoclingAPI`, `DoclingCLI` and
+`DoclingWeb` describe shared and client-specific methods. Sharing an interface
+does not imply feature parity: the Web client's file-output methods reject as
+unsupported. Check the [API reference](api-reference.md) for each concrete client.
 
-```typescript
-import {
-  isConversionSuccess,
-  isConversionFailure,
-  isTargetConversionSuccess,
-  hasDocumentContent,
-  isPresignedUrlResponse,
-} from "docling-sdk";
+`isAPIClient`, `isCLIClient` and `isWebClient` narrow client instances returned by
+the main factory. Configuration guards defined inside `src/types/client.ts` are
+not exported as functions from the package root.
+
+## Result pattern
+
+`safeConvert` returns `Result<ConvertDocumentResponse, ProcessingError>`.
+File-output methods use a different contract, including nested results for
+`safeConvertToFile` on API/CLI and unsupported operations on Web. See the
+[canonical error-handling guide](error-handling.md#result-pattern) for examples
+and the distinction between rejection and a resolved failure object.
+
+The main entry also exports `tryAsync`, `success`, `failure` and the Result types
+for callers implementing their own wrappers.
+
+## OpenAPI types and adapters
+
+The type-only `OpenAPI` namespace is exported, but
+`src/types/generated/api.ts` currently contains placeholder `paths`, `components`
+and `operations`, not generated endpoint definitions. Endpoint-indexing examples
+will not work until that scaffold is populated. Handwritten types remain the
+SDK's primary contract.
+
+To generate types against a running Docling Serve instance:
+
+```bash
+npm run openapi:fetch
+npm run openapi:generate
 ```
 
-## Result Pattern
+`DOCLING_URL` or `openapi:fetch -- --url URL` selects a different server. Confirm
+that fetching created `openapi/docling-serve.json` before generating: the fetcher
+also accepts YAML, while the generation script reads only the JSON path. Do not
+hand-edit generated output. Keep handwritten types, runtime schemas and adapters
+consistent when changing the SDK contract.
 
-The SDK provides a `Result<T, E>` type for error handling without exceptions.
+S3 adapters translate the SDK's convenience fields into server request fields;
+see [S3 Integration](s3-integration.md). The
+[architecture log](../ARCHITECTURE.md#sdk-contract-and-server-adapters) records
+this boundary and its synchronization cost.
 
-### Type definition
-
-```typescript
-type Result<T, E = Error> = Success<T> | Failure<E>;
-
-interface Success<T> {
-  readonly success: true;
-  readonly data: T;
-}
-
-interface Failure<E> {
-  readonly success: false;
-  readonly error: E;
-}
-```
-
-### Safe methods
-
-Every client has `safeConvert` and `safeConvertToFile`:
-
-```typescript
-const result = await client.safeConvert(buffer, "doc.pdf");
-
-if (result.success) {
-  // TypeScript narrows to Success<ConvertDocumentResponse>
-  console.log(result.data.document.md_content);
-} else {
-  // TypeScript narrows to Failure<ProcessingError>
-  console.error(result.error.message);
-}
-```
-
-### tryAsync utility
-
-Wrap any async function in a Result:
-
-```typescript
-import { tryAsync } from "docling-sdk";
-
-const result = await tryAsync(() =>
-  client.convertFromUrl("https://example.com/doc.pdf")
-);
-```
-
-### Creating results manually
-
-```typescript
-import { success, failure } from "docling-sdk";
-
-function processDocument(): Result<string, Error> {
-  try {
-    return success("processed content");
-  } catch (e) {
-    return failure(e as Error);
-  }
-}
-```
-
-## Client Interfaces
-
-The SDK exports interfaces for each client type:
-
-```typescript
-import type {
-  DoclingClientBase,  // Base interface (convert, toMarkdown, etc.)
-  DoclingAPI,          // API client interface (extends DoclingClientBase)
-  DoclingCLI,          // CLI client interface (extends DoclingClientBase)
-  DoclingWeb,          // Web client interface (extends DoclingClientBase)
-} from "docling-sdk";
-```
-
-`DoclingClientBase` defines the shared methods:
-
-- `convert(file, filename, options?)`
-- `toMarkdown(file, filename, options?)`
-- `toHtml(file, filename, options?)`
-- `extractText(file, filename, options?)`
-- `convertDocument(file, filename, options)`
-- `process(file, filename, options?)`
-- `convertToFile(file, filename, options)`
-- `safeConvert(file, filename, options?)`
-- `safeConvertToFile(file, filename, options)`
-
-### Conditional client type
-
-```typescript
-import type { DoclingClient, DoclingConfig } from "docling-sdk";
-
-// Resolves to DoclingAPI, DoclingCLI, or DoclingWeb based on config
-type MyClient = DoclingClient<{ api: { baseUrl: string } }>;
-// -> DoclingAPI
-```
-
-## OpenAPI Generated Types
-
-Types are auto-generated from the Docling Serve OpenAPI specification and exported under the `OpenAPI` namespace:
-
-```typescript
-import type { OpenAPI } from "docling-sdk";
-
-// Access endpoint types
-type ConvertEndpoint = OpenAPI.paths["/v1/convert/source"];
-
-// Access schema types
-type TaskStatus = OpenAPI.components["schemas"]["TaskStatus"];
-```
-
-The generated types supplement the manually maintained types in `src/types/api.ts`. The manual types remain the primary interface.
-
-## Zod Validation
-
-Runtime validation using Zod schemas:
+## Zod validation
 
 ```typescript
 import { ZodValidation } from "docling-sdk";
 
-// Validate with throw
-const validated = ZodValidation.validateConversionOptions({
+const options = ZodValidation.validateConversionOptions({
   to_formats: ["md"],
   do_ocr: true,
 });
 
-// Safe validation (returns Zod SafeParseResult)
 const result = ZodValidation.safeValidateConversionOptions(userInput);
-if (result.success) {
-  console.log(result.data);
-} else {
-  console.log(result.error.issues);
-}
+if (!result.success) console.error(result.error.issues);
 
-// Individual validators
-ZodValidation.isValidInputFormat("pdf");      // true
-ZodValidation.isValidOutputFormat("md");       // true
-ZodValidation.isValidOcrEngine("easyocr");     // true
-ZodValidation.isValidPdfBackend("dlparse_v2"); // true
-ZodValidation.isValidTableMode("accurate");    // true
+ZodValidation.isValidInputFormat("pdf");
+ZodValidation.isValidOutputFormat("md");
+ZodValidation.isValidOcrEngine("easyocr");
 ```
 
-## Import Patterns
+Runtime validation and compile-time types are separate surfaces; both need to
+match the server contract.
 
-### Main entry point (`docling-sdk`)
+## Entry points
+
+Use the [runtime entry-point table](cross-runtime.md#entry-points) to select a
+build. The browser entry excludes the main `Docling` and CLI factories.
 
 ```typescript
-import {
-  Docling,
-  createAPIClient,
-  createCLIClient,
-  createWebClient,
-  isAPIClient,
-  isCLIClient,
-  isWebClient,
-} from "docling-sdk";
-
-import type {
-  DoclingConfig,
-  DoclingAPIConfig,
-  DoclingCLIConfig,
-  DoclingAPI,
-  DoclingCLI,
-  DoclingWeb,
-  ConversionOptions,
-  ConvertDocumentResponse,
-  ProgressConfig,
-  ProgressUpdate,
-} from "docling-sdk";
+import { createAPIClient } from "docling-sdk/browser";
+import { createWebClient, doclingToMarkdown } from "docling-sdk/web";
 ```
 
-### CLI entry point (`docling-sdk/cli`)
-
-```typescript
-import { /* CLI-specific exports */ } from "docling-sdk/cli";
-```
-
-### Browser entry point (`docling-sdk/browser`)
-
-A trimmed build without Node.js dependencies:
-
-```typescript
-import { Docling, createAPIClient } from "docling-sdk/browser";
-```
-
-### Web entry point (`docling-sdk/web`)
-
-Exports the Web OCR client and utilities:
-
-```typescript
-import {
-  createWebClient,
-  doclingToHtml,
-  doclingToMarkdown,
-  doclingToPlainText,
-  doclingToJson,
-  extractTables,
-  tableToCSV,
-  extractOverlays,
-  clearModelCache,
-  getModelCacheSize,
-  renderPdfToImages,
-} from "docling-sdk/web";
-
-import type {
-  WebOCRResult,
-  ImageInput,
-  WebProcessOptions,
-  WebClientEvents,
-  ExtractedTable,
-  ElementOverlay,
-} from "docling-sdk/web";
-```
-
-### Worker entry point (`docling-sdk/web/worker`)
-
-The Web Worker script for browser-based OCR:
-
-```typescript
-import "docling-sdk/web/worker";
-```
-
-### Platform entry point (`docling-sdk/platform`)
-
-Full SDK with platform detection utilities:
-
-```typescript
-import { Docling } from "docling-sdk/platform";
-```
-
-## Related
-
-- [Error Handling](./error-handling.md) -- error classes and validation
-- [Configuration](./configuration.md) -- config type details
-- [Cross-Runtime](./cross-runtime.md) -- entry points per runtime
+See [Cross-Runtime](cross-runtime.md) for entry selection and worker bundling.

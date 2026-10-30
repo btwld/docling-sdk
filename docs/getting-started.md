@@ -8,7 +8,7 @@ Docling SDK supports three client modes, each with its own requirements:
 
 | Client | Runtime | Requirement |
 |--------|---------|-------------|
-| API | Node.js >= 18, Bun, Deno | A running [Docling Serve](https://github.com/DS4SD/docling-serve) instance |
+| API | Node.js >= 18, Bun, Deno, browser | A running [Docling Serve](https://github.com/DS4SD/docling-serve) instance |
 | CLI | Node.js >= 18 | Python with [Docling](https://github.com/DS4SD/docling) installed |
 | Web | Browser with WebGPU or WASM | Peer dependencies (see below) |
 
@@ -26,7 +26,8 @@ npm install docling-sdk
 npm install @btwld/docling-sdk
 ```
 
-Both packages are identical. The GitHub Package Registry version is available for enterprise environments.
+The release workflow also publishes the scoped package to GitHub Packages.
+The package uses ESM imports.
 
 ### Peer dependencies
 
@@ -47,7 +48,7 @@ npm install -D typescript
 
 | Use case | Client | Why |
 |----------|--------|-----|
-| Server-side conversion through Docling Serve | API | Fastest, supports streaming, chunking, async tasks |
+| Conversion through Docling Serve | API | Server conversion, chunking and async tasks |
 | Local conversion without a server | CLI | Uses Python Docling directly, batch and watch modes |
 | In-browser OCR without any server | Web | Runs entirely client-side via WebGPU/WASM |
 
@@ -122,7 +123,9 @@ console.log(result.markdown);
 client.destroy();
 ```
 
-The model (~500 MB) is cached in IndexedDB after the first download.
+The model assets are downloaded on initialization and persisted through the
+Cache API. `imageFile` above is an image `File` selected by the application.
+Web OCR accepts images and rendered PDFs, not Office/HTML inputs.
 
 See the full [Web Client guide](./web-client.md) for events, cache management, and standalone utilities.
 

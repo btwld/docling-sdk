@@ -156,7 +156,8 @@ console.log(result.document.md_content);
 
 ### convertToFile
 
-Returns the result as a ZIP file stream:
+Buffers a ZIP result, returning a Node readable over those bytes or `data`
+outside Node:
 
 ```typescript
 import { createWriteStream } from "node:fs";
@@ -171,60 +172,18 @@ if (result.success && result.fileStream) {
 ```
 
 The `ConversionFileResult` contains:
+
 - `success` -- whether the conversion succeeded
 - `fileStream` -- Node.js readable stream (Node.js only)
 - `data` -- raw `Uint8Array` (browser, Deno, Bun)
 - `fileMetadata` -- `{ filename, contentType, size }`
 - `error` -- error details on failure
 
-## Streaming
+## Streaming and file output
 
-### Content streaming
-
-Stream converted content directly to a writable stream:
-
-```typescript
-import { createWriteStream } from "node:fs";
-
-await client.convertToStream(
-  buffer,
-  "document.pdf",
-  createWriteStream("./output.md"),
-  { to_formats: ["md"] }
-);
-```
-
-### ZIP streaming
-
-Submit async, then stream the result ZIP:
-
-```typescript
-import { createReadStream, createWriteStream } from "node:fs";
-
-const result = await client.convertStreamToFile(
-  createReadStream("./document.pdf"),
-  "document.pdf",
-  { to_formats: ["md", "json"] }
-);
-
-if (result.success && result.fileStream) {
-  result.fileStream.pipe(createWriteStream("./result.zip"));
-}
-```
-
-### Input streaming
-
-Convert a readable stream (useful for Express/NestJS file uploads):
-
-```typescript
-const result = await client.convertStream(
-  request.file.stream,
-  "upload.pdf",
-  { to_formats: ["md"] }
-);
-```
-
-See the full [Streaming guide](./streaming.md) for cross-runtime patterns.
+`convertToStream`, `convertStream` and `convertStreamToFile` have different
+buffering and runtime behavior. A stream-shaped API does not guarantee bounded
+memory. See the [transfer behavior table and Node examples](streaming.md).
 
 ## Async Conversion
 
@@ -345,21 +304,12 @@ const result = await client.convert(buffer, "doc.pdf", { to_formats: ["md"] }, {
 });
 ```
 
-## Safe Methods
+## Safe methods
 
-Methods prefixed with `safe` return a `Result<T, E>` instead of throwing:
-
-```typescript
-const result = await client.safeConvert(buffer, "doc.pdf");
-
-if (result.success) {
-  console.log(result.data.document.md_content);
-} else {
-  console.error(result.error.message);
-}
-```
-
-See the [TypeScript guide](./typescript.md) for more on the Result pattern.
+`safeConvert` wraps conversion rejection in a Result. `safeConvertToFile` wraps
+an existing `ConversionFileResult`, so an outer success can contain an inner
+failure. See [error handling](error-handling.md#result-pattern) for the contracts
+and examples.
 
 ## Related
 

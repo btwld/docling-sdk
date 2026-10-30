@@ -1,124 +1,77 @@
-# Streaming
+# Streaming and File Output
 
 [Home](../README.md) > [Docs](./README.md) > Streaming
 
-The API client supports three streaming modes for memory-efficient document processing.
+A stream input or output does not guarantee bounded memory use. The API client
+has several transfer paths with different buffering and runtime requirements.
 
-## Content Streaming
+## Method behavior
 
-Stream converted content directly to a writable stream without holding the full result in memory:
+| API client method | Input / output | Current behavior |
+|---|---|---|
+| `convertToStream` (default content mode) | Bytes → writable | Receives the JSON conversion response before writing content; the result can be buffered |
+| `convertToFile` | Bytes → ZIP result | Buffers the ZIP; returns a Node readable wrapping those bytes, or `data: Uint8Array` outside Node |
+| `convertStream` | Node readable → document | Accepts a Node input stream; the multipart encoder collects input chunks before upload |
+| `convertStreamToFile` | Node readable → ZIP result | Buffers multipart input, submits asynchronously and returns a Node download stream after completion; no portable byte fallback |
+| `getTaskResultFile` | Task ID → ZIP result | Uses the Node download-stream path; no portable byte fallback |
+
+For portable ZIP bytes, use the API client's `convertToFile` and inspect `data`.
+Do not assume async file-output methods offer the same fallback. Web OCR does
+not support `convertToFile` or `safeConvertToFile`.
+
+## Write converted content (Node)
 
 ```typescript
 import { readFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
-import { Docling } from "docling-sdk";
+import { createAPIClient } from "docling-sdk";
 
-const client = new Docling({ api: { baseUrl: "http://localhost:5001" } });
-const buffer = await readFile("./document.pdf");
-
-await client.convertToStream(
-  buffer,
+const client = createAPIClient("http://localhost:5001");
+const result = await client.convertToStream(
+  await readFile("document.pdf"),
   "document.pdf",
-  createWriteStream("./output.md"),
+  createWriteStream("output.md"),
   { to_formats: ["md"] }
 );
+if (!result.success) throw new Error(result.error?.message);
 ```
 
-This is useful when you need a single output format written directly to disk or piped to another process.
+This writes to a writable destination after conversion; it is not a promise of
+incremental conversion or constant memory use.
 
-## ZIP Streaming
-
-Submit a conversion asynchronously, then stream the result as a ZIP file:
+## ZIP download after async conversion (Node)
 
 ```typescript
 import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 
 const result = await client.convertStreamToFile(
-  createReadStream("./document.pdf"),
+  createReadStream("document.pdf"),
   "document.pdf",
   { to_formats: ["md", "json"] }
 );
-
-if (result.success && result.fileStream) {
-  result.fileStream.pipe(createWriteStream("./result.zip"));
+if (!result.success || !result.fileStream) {
+  throw new Error(result.error?.message ?? "No ZIP stream returned");
 }
+await pipeline(result.fileStream, createWriteStream("result.zip"));
 ```
 
-This is the recommended approach when you need multiple output formats or when the input is a stream (e.g., from an HTTP upload).
-
-## Input Streaming
-
-Convert directly from a readable stream, useful for Express or NestJS file upload middleware:
-
-```typescript
-const result = await client.convertStream(
-  request.file.stream,   // any ReadableStream
-  "upload.pdf",
-  { to_formats: ["md"] }
-);
-
-console.log(result.document.md_content);
-```
+The download can stream, but the input is collected for multipart upload first.
 
 ## ConversionFileResult
 
-Both `convertToFile` and `convertStreamToFile` return a `ConversionFileResult`:
+`success` reports operation success. Depending on the method and runtime, a
+successful result has `fileStream` (a Node readable) or `data` (bytes), plus
+`fileMetadata` with filename, content type and optional size. On failure inspect
+`error`. Always check the payload field expected from the selected method.
 
-```typescript
-interface ConversionFileResult {
-  success: boolean;
-  fileStream?: NodeReadable;      // Node.js readable stream
-  data?: Uint8Array;              // Raw bytes (browser, Deno, Bun)
-  fileMetadata?: {
-    filename: string;
-    contentType: string;
-    size?: number;
-  };
-  error?: ProcessingError;
-}
-```
-
-- In Node.js, use `fileStream` (a `stream.Readable`)
-- In browser, Deno, or Bun, use `data` (a `Uint8Array`)
-
-## Cross-Runtime Patterns
-
-### Node.js
-
-```typescript
-if (result.success && result.fileStream) {
-  result.fileStream.pipe(createWriteStream("./output.zip"));
-}
-```
-
-### Bun
-
-```typescript
-if (result.success && result.data) {
-  await Bun.write("./output.zip", result.data);
-}
-```
-
-### Deno
-
-```typescript
-if (result.success && result.data) {
-  await Deno.writeFile("./output.zip", result.data);
-}
-```
-
-### Browser
-
-```typescript
-if (result.success && result.data) {
-  const blob = new Blob([result.data], { type: "application/zip" });
-  const url = URL.createObjectURL(blob);
-  // Use url for download link
-}
-```
+Outside Node, a successful API `convertToFile` result can be saved using
+`Bun.write`, `Deno.writeFile`, or a browser `Blob` download. Deno file output
+requires `--allow-write` in addition to permissions needed for conversion.
 
 ## Related
 
-- [API Client](./api-client.md) -- all conversion methods
-- [Async and Progress](./async-progress.md) -- async as an alternative to streaming
-- [Cross-Runtime](./cross-runtime.md) -- runtime-specific patterns
+- [API Client](api-client.md) — conversion methods
+- [Async and Progress](async-progress.md) — tasks and result retrieval
+- [Cross-Runtime](cross-runtime.md) — runtime entry points
+- [Error Handling](error-handling.md#result-pattern) — file result versus safe wrapper

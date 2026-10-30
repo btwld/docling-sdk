@@ -2,11 +2,14 @@
 
 [Home](../README.md) > [Docs](./README.md) > S3 Integration
 
-The API client can read documents from and write results to S3-compatible storage.
+The API client sends S3 source/target requests to Docling Serve, which performs
+storage access. Credentials and storage locations travel to that server, which
+must be able to reach the configured endpoint. The SDK does not use an AWS SDK
+credential-provider chain.
 
 ## S3Config
 
-The SDK provides a user-friendly `S3Config` interface that maps to the OpenAPI S3 format:
+`S3Config` maps SDK convenience fields to the server request format:
 
 ```typescript
 interface S3Config {
@@ -16,10 +19,13 @@ interface S3Config {
   endpoint?: string;         // Custom endpoint (default: s3.<region>.amazonaws.com)
   access_key_id?: string;    // Falls back to AWS_ACCESS_KEY_ID env var
   secret_access_key?: string; // Falls back to AWS_SECRET_ACCESS_KEY env var
-  session_token?: string;
   verify_ssl?: boolean;      // Default: true
 }
 ```
+
+`session_token` exists in the SDK config type but is not forwarded by the current
+adapters. Use credentials supported by the server request fields. For the shared
+contract rationale, see [SDK contract and server adapters](../ARCHITECTURE.md#sdk-contract-and-server-adapters).
 
 ## Converting from S3
 
@@ -40,6 +46,7 @@ console.log(result.document.md_content);
 ```
 
 The SDK:
+
 1. Maps `S3Config` to the OpenAPI `S3Source` format
 2. Resolves credentials from the config or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment variables
 3. Sends the source request to Docling Serve, which reads the file from S3
@@ -87,7 +94,8 @@ const result = await client.convertSource({
 
 ## Type Adapters
 
-The SDK provides adapter functions to transform between the user-friendly `S3Config` and the OpenAPI format:
+Adapters map fields such as `key` to `key_prefix` and `access_key_id` to
+`access_key`:
 
 ```typescript
 import { toOpenApiS3Source, toOpenApiS3Target } from "docling-sdk";
