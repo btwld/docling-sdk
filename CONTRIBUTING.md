@@ -1,223 +1,69 @@
 # Contributing to Docling SDK
 
-Thank you for your interest in contributing to the Docling SDK! This guide will help you get started.
-
-## 🚀 Quick Start
-
-1. **Fork and Clone**
-
-   ```bash
-   git clone https://github.com/btwld/docling-sdk.git
-   cd docling-sdk
-   ```
-
-2. **Install Dependencies**
-
-   ```bash
-   npm install
-   ```
-
-3. **Run Tests**
-   ```bash
-   npm test
-   ```
-
-## 📋 Development Workflow
-
-### Branch Strategy
-
-- `main` - Production releases
-- `next` - Pre-release features
-- `beta` - Beta testing
-- `alpha` - Alpha testing
-- `feature/*` - New features
-- `fix/*` - Bug fixes
-- `chore/*` - Maintenance tasks
-
-### Commit Convention
-
-We use [Conventional Commits](https://conventionalcommits.org/):
-
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
-```
-
-**Types:**
-
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code refactoring
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-- `ci`: CI/CD changes
-- `perf`: Performance improvements
-
-**Examples:**
+## Local setup
 
 ```bash
-feat(api): add streaming support for large files
-fix(cli): resolve timeout issue with large documents
-docs(readme): update installation instructions
+git clone https://github.com/btwld/docling-sdk.git
+cd docling-sdk
+npm ci
 ```
 
-### Release Process
+Use Node.js >=18; CI runs Node 20. Submit changes through a pull request to `main`.
 
-Releases are **fully automated** using github-actions[bot]:
+## Checks
 
-#### **Automatic Releases**
-
-When you change the version in `package.json` and push to main:
+Run the checks relevant to your change before opening a PR:
 
 ```bash
-# Update version in package.json
-npm version patch  # or minor, major
-git push origin main
-# → Automatic release triggered
-```
-
-#### **Manual Releases**
-
-Use GitHub Actions UI for controlled releases:
-
-1. Go to **Actions** → **Release** workflow
-2. Click **"Run workflow"**
-3. Choose release type:
-   - **patch**: `1.0.0` → `1.0.1` (bug fixes)
-   - **minor**: `1.0.0` → `1.1.0` (new features)
-   - **major**: `1.0.0` → `2.0.0` (breaking changes)
-
-#### **Conventional Commits**
-
-Use conventional commit messages for better changelogs:
-
-```bash
-# Patch release triggers
-git commit -m "fix: resolve memory leak in file processing"
-
-# Minor release triggers
-git commit -m "feat: add new OCR engine support"
-
-# Major release triggers
-git commit -m "feat!: redesign API interface
-
-BREAKING CHANGE: The API interface has been completely redesigned"
-```
-
-### Package Ownership
-
-The following npm users have ownership/publishing rights to `docling-sdk`:
-
-- **kauandotnet** (primary maintainer)
-- **leoafarias**
-- **tnramalho**
-
-New owners can be added using: `npm owner add <username> docling-sdk`
-
-## 🧪 Testing
-
-### Running Tests
-
-```bash
-# Unit tests
-npm run test:unit
-
-# Integration tests
-npm run test:integration
-
-# All tests
-npm run test:all
-
-# With coverage
-npm run test:coverage
-
-# Watch mode
-npm run test:ui
-```
-
-### Writing Tests
-
-- Place unit tests in `tests/unit/`
-- Place integration tests in `tests/integration/`
-- Use descriptive test names
-- Mock external dependencies
-- Aim for >90% code coverage
-
-## 🔧 Code Quality
-
-### Linting and Formatting
-
-```bash
-# Check code style
-npm run lint
-
-# Fix auto-fixable issues
-npm run lint:fix
-
-# Format code
-npm run format:fix
-
-# Type checking
 npm run typecheck
+npm run lint
+npm test
+npm run build
 ```
 
-### Pre-commit Checks
+Use Biome for formatting (`npm run format:fix`). See [package.json](package.json)
+for other scripts and [vitest.config.ts](vitest.config.ts) for test configuration.
 
-Before committing, ensure:
+Unit tests live in `tests/unit/`. Integration tests live in `tests/integrations/`
+and require their external services. The S3 integration file currently contains
+commented examples, not an executable test suite. `npm test` runs unit tests;
+coverage is a separate `npm run test:coverage` command, not a CI coverage gate.
 
-- [ ] Tests pass (`npm test`)
-- [ ] Linting passes (`npm run lint`)
-- [ ] Types are correct (`npm run typecheck`)
-- [ ] Build succeeds (`npm run build`)
+## Changes and commit messages
 
-## 📦 Publishing
+Use [Conventional Commits](https://www.conventionalcommits.org/), such as
+`fix(api): handle a missing task result` or `docs: clarify browser setup`.
+The [PR-title check](.github/workflows/pr-title.yml) validates the PR title.
+Describe behavior changes, compatibility effects and validation in the PR.
 
-Publishing is **completely automated**:
+Keep SDK types, runtime schemas and adapters consistent when changing API
+contracts. Check public entry exports and client-specific capabilities when
+updating examples. See the [TypeScript guide](docs/typescript.md).
 
-1. **Merge to `main`** → Triggers production release
-2. **Merge to `next`** → Triggers pre-release (`1.0.0-next.1`)
-3. **Merge to `beta`** → Triggers beta release (`1.0.0-beta.1`)
-4. **Merge to `alpha`** → Triggers alpha release (`1.0.0-alpha.1`)
+## Releases
 
-### What Happens Automatically:
+The [release workflow](.github/workflows/release.yml) owns version bumps on `main`.
+Do not manually bump `package.json` as the normal contribution workflow.
 
-- ✅ Version bump in `package.json`
-- ✅ Generate `CHANGELOG.md`
-- ✅ Create GitHub release with notes
-- ✅ Publish to npm
-- ✅ Update git tags
-- ✅ Commit changes back to repo
+- On pushes to `main`, the workflow examines conventional commits since the last
+  tag, skips excluded changes such as documentation-only commits, and determines
+  whether to release. Version selection uses the workflow's own heuristics.
+- Maintainers can run **Actions → Release → Run workflow**, choosing `auto`,
+  `patch`, `minor` or `major` to override version selection.
+- There are no automatic push-triggered releases from `next`, `beta` or `alpha`.
 
-## 🐛 Bug Reports
+The workflow commits version and changelog updates, publishes packages and
+creates the release. A failed run can leave intermediate commits or tags behind;
+inspect the run, published versions and repository state before retrying. Do not
+assume a failed run made no changes. PRs [#62](https://github.com/btwld/docling-sdk/pull/62),
+[#63](https://github.com/btwld/docling-sdk/pull/63) and
+[#64](https://github.com/btwld/docling-sdk/pull/64) document previous recovery work.
 
-When reporting bugs, please include:
+## Reporting issues
 
-- Node.js version
-- Operating system
-- Steps to reproduce
-- Expected vs actual behavior
-- Error messages/stack traces
+Include the client mode, runtime/version, minimal reproduction and actual error.
+For server behavior, include the Docling Serve or Python Docling version.
 
-## 💡 Feature Requests
+## License
 
-For new features:
-
-- Check existing issues first
-- Describe the use case
-- Provide examples
-- Consider backward compatibility
-
-## 📞 Getting Help
-
-- 💬 **Discussions**: GitHub Discussions
-- 🐛 **Issues**: GitHub Issues
-- 📧 **Email**: [Your contact email]
-
-## 📄 License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Contributions use the [BSD-3-Clause license](LICENSE).

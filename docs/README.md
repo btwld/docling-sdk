@@ -2,6 +2,8 @@
 
 [Home](../README.md) > Docs
 
+[Core concepts](../README.md) · [Architecture decisions](../ARCHITECTURE.md)
+
 ## Guides
 
 | Guide | Description |
