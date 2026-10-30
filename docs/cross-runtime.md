@@ -2,256 +2,133 @@
 
 [Home](../README.md) > [Docs](./README.md) > Cross-Runtime
 
-Docling SDK supports Node.js, Bun, Deno, browsers, and Cloudflare Workers through conditional exports and runtime detection.
+The API transport uses fetch-based platform adapters and `Uint8Array` inputs.
+CLI execution requires Node and Python; local OCR requires browser worker APIs.
+Client capabilities and transfer behavior vary by runtime.
 
-## Entry Points
+## Entry points
 
-| Entry point | Import path | Use case |
-|-------------|-------------|----------|
-| Main | `docling-sdk` | Node.js, Bun, Deno (full SDK) |
-| CLI | `docling-sdk/cli` | CLI-only utilities |
-| Browser | `docling-sdk/browser` | Browser builds (no Node.js deps) |
-| Web | `docling-sdk/web` | Web OCR client and utilities |
-| Worker | `docling-sdk/web/worker` | Web Worker for OCR inference |
-| Platform | `docling-sdk/platform` | Full SDK with platform utilities |
+| Import path | Purpose |
+|---|---|
+| `docling-sdk` | Node/Bun/Deno main build; browser-aware bundlers select the browser build |
+| `docling-sdk/cli` | Node CLI client and helpers |
+| `docling-sdk/browser` | API and Web client factories, excluding the Node CLI; no `Docling` factory |
+| `docling-sdk/web` | Browser OCR and standalone DocTags/cache/PDF utilities |
+| `docling-sdk/web/worker` | Worker inference script, with initialization side effects |
+| `docling-sdk/platform` | Alias of the main build; not a standalone export of internal platform utilities |
 
-The `package.json` exports map resolves the correct build per runtime:
-
-```json
-{
-  ".": {
-    "browser": "./dist/browser.js",
-    "bun": "./dist/index.js",
-    "deno": "./dist/index.js",
-    "node": "./dist/index.js"
-  }
-}
-```
+The root `browser` condition selects `dist/browser.js`. Use the explicit browser
+entry when the consumer must exclude CLI code; check your bundler's resolved
+exports rather than assuming every root export exists in every environment.
 
 ## Node.js
 
-Full feature support including file system access, connection pooling, and WebSocket via `ws`.
-
 ```typescript
-import { Docling, createAPIClient, createCLIClient } from "docling-sdk";
 import { readFile } from "node:fs/promises";
-import { createWriteStream } from "node:fs";
-
-const client = createAPIClient("http://localhost:5001");
-const buffer = await readFile("./document.pdf");
-
-const result = await client.convert(buffer, "document.pdf", {
-  to_formats: ["md"],
-});
-
-// File streaming
-const zip = await client.convertToFile(buffer, "doc.pdf", {
-  to_formats: ["md", "json"],
-});
-if (zip.success && zip.fileStream) {
-  zip.fileStream.pipe(createWriteStream("./output.zip"));
-}
-```
-
-Node.js features:
-- File paths in `convert()` and `convertFromFile()`
-- `stream.Readable` in `ConversionFileResult.fileStream`
-- Connection pooling via `node:http` / `node:https` agents
-- WebSocket via the `ws` package (optional dependency)
-- CLI client (`DoclingCLIClient`) for local Python execution
-
-## Bun
-
-API client works with Bun's native `fetch` and `WebSocket`:
-
-```typescript
 import { createAPIClient } from "docling-sdk";
 
 const client = createAPIClient("http://localhost:5001");
-
-const file = Bun.file("./document.pdf");
-const buffer = new Uint8Array(await file.arrayBuffer());
-
-const result = await client.convert(buffer, "document.pdf", {
+const result = await client.convert(await readFile("document.pdf"), "document.pdf", {
   to_formats: ["md"],
 });
-
-// File output
-const zip = await client.convertToFile(buffer, "doc.pdf", {
-  to_formats: ["md"],
-});
-if (zip.success && zip.data) {
-  await Bun.write("./output.zip", zip.data);
-}
+console.log(result.document.md_content);
 ```
 
-Bun features:
-- Native `fetch` and `WebSocket` (no `ws` needed)
-- `Bun.file()` for reading input files
-- `Bun.write()` for writing output
-- `ConversionFileResult.data` returns `Uint8Array`
+Node supports file paths and Node streams on the methods that expose them, and
+uses optional `ws` for WebSocket progress. HTTP uses the platform fetch client;
+the old SDK `ConnectionPool` class is deprecated and is no longer wired into
+requests or exported as a public pool configuration API.
 
-## Deno
+## Bun and Deno
 
-Use `npm:` imports with appropriate permissions:
+Use `Uint8Array` input with the API client. Read a Bun file with
+`new Uint8Array(await Bun.file("document.pdf").arrayBuffer())`, or use
+`await Deno.readFile("document.pdf")` in Deno.
 
 ```typescript
+// Deno
 import { createAPIClient } from "npm:docling-sdk";
 
 const client = createAPIClient("http://localhost:5001");
-
-const buffer = await Deno.readFile("./document.pdf");
-
-const result = await client.convert(buffer, "document.pdf", {
-  to_formats: ["md"],
-});
-
-// File output
-const zip = await client.convertToFile(buffer, "doc.pdf", {
-  to_formats: ["md"],
-});
-if (zip.success && zip.data) {
-  await Deno.writeFile("./output.zip", zip.data);
-}
+const input = await Deno.readFile("document.pdf");
+const result = await client.convert(input, "document.pdf", { to_formats: ["md"] });
+console.log(result.document.md_content);
 ```
 
-Required permissions:
-- `--allow-net` for API calls
-- `--allow-env` for environment variable access (S3 credentials)
-- `--allow-read` for file input
+Deno requires `--allow-net`, `--allow-read` and `--allow-env` for this example.
+The main entry eagerly loads the CLI client and `archiver` at import time, even
+when only `createAPIClient` is used. That dependency chain reads environment
+variables (including `GRACEFUL_FS_PLATFORM`), so importing without `--allow-env`
+fails on Deno 2.9.6 before any API request. Environment-based S3 credentials also
+need env access; saving output needs `--allow-write`.
 
-```bash
-deno run --allow-net --allow-env --allow-read script.ts
-```
+For API `convertToFile`, check `success`, then inspect whether `fileStream` or
+`data` is present. The byte fallback runs only when the SDK's internal `isNode()`
+returns false. On Deno 2.9.6, both `isNode()` and `isDeno()` return true, so a
+successful ZIP conversion returns a Node-compatible `fileStream`, without `data`.
+Consume that stream or collect its chunks if you need bytes. Async download
+methods do not provide the byte fallback; see
+[transfer behavior](streaming.md#method-behavior).
 
-## Browser
+## Browser API conversion
 
-Use the `docling-sdk/browser` entry point for a build without Node.js dependencies:
+The browser build exports `createAPIClient`, not `Docling`:
 
 ```typescript
-import { Docling, createAPIClient } from "docling-sdk/browser";
+import { createAPIClient } from "docling-sdk/browser";
 
 const client = createAPIClient("http://localhost:5001");
+const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+const file = input?.files?.[0];
+if (!file) throw new Error("Choose a document first");
 
-// From File input
-const file = document.querySelector("input[type=file]").files[0];
-const buffer = new Uint8Array(await file.arrayBuffer());
-
-const result = await client.convert(buffer, file.name, {
-  to_formats: ["md"],
-});
+const result = await client.convert(
+  new Uint8Array(await file.arrayBuffer()),
+  file.name,
+  { to_formats: ["md"] }
+);
+console.log(result.document.md_content);
 ```
 
-### Web OCR (no server)
+Docling Serve must be reachable from the browser with appropriate CORS settings.
+When a bundler selects the root browser condition, use the same browser factory.
+
+## Browser-local OCR and worker bundling
+
+Use `createWebClient` from `docling-sdk/web`; see the [Web guide](web-client.md)
+for peer dependencies, initialization, model download and cleanup. Web OCR
+accepts images and rendered PDF pages, not the API client's full Office/HTML
+input-format set.
+
+Provide a bundler-resolved worker URL when needed. For example, in Vite:
 
 ```typescript
 import { createWebClient } from "docling-sdk/web";
-
-const client = createWebClient({ device: "webgpu" });
-await client.initialize();
-
-const result = await client.processImage(file);
-console.log(result.markdown);
-```
-
-### Bundler setup
-
-For Vite, webpack, or other bundlers, the `browser` condition in `package.json` exports automatically resolves the correct build:
-
-```typescript
-// In a bundler context, this resolves to the browser build
-import { Docling } from "docling-sdk";
-```
-
-For the Web OCR worker, configure your bundler to handle the worker import:
-
-```typescript
-// Vite example
 import workerUrl from "docling-sdk/web/worker?worker&url";
+
 const client = createWebClient({ workerUrl });
+await client.initialize();
+// Process images, then call client.destroy().
 ```
 
-## Cloudflare Workers
+Preserve the worker bundle's initialization side effects. Importing the worker
+script in the UI entry does not create a worker. See
+[worker packaging rationale](../ARCHITECTURE.md#browser-inference-worker).
 
-Use the worker-compatible APIs (no file system, no Node.js streams):
+## Cloudflare Workers and other edge runtimes
 
-```typescript
-import { createAPIClient } from "docling-sdk";
+Bundle the API client through the browser entry and verify the deployment's
+export resolution and fetch support. Filesystem access, the local CLI and Node
+stream methods require capabilities that ordinary edge runtimes do not provide.
+Use HTTP progress polling when the runtime cannot provide the required outgoing
+WebSocket implementation.
 
-export default {
-  async fetch(request: Request): Promise<Response> {
-    const client = createAPIClient("https://docling.example.com");
-
-    const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const buffer = new Uint8Array(await file.arrayBuffer());
-
-    const result = await client.convert(buffer, file.name, {
-      to_formats: ["md"],
-    });
-
-    return new Response(result.document.md_content, {
-      headers: { "Content-Type": "text/markdown" },
-    });
-  },
-};
-```
-
-Cloudflare Workers limitations:
-- No file system access
-- No Node.js streams (`fileStream` will be `undefined`; use `data` instead)
-- No CLI client
-- No WebSocket (use HTTP polling for progress)
-
-## Platform Detection
-
-The SDK provides runtime detection utilities:
-
-```typescript
-import {
-  isNode,
-  isBun,
-  isDeno,
-  isBrowser,
-  isServer,
-  detectRuntime,
-  getRuntimeInfo,
-} from "docling-sdk/platform";
-
-console.log(detectRuntime());
-// "node" | "bun" | "deno" | "browser" | "unknown"
-
-console.log(getRuntimeInfo());
-// {
-//   runtime: "node",
-//   version: "20.11.0",
-//   features: {
-//     nativeWebSocket: true,
-//     nativeFetch: true,
-//     webStreams: true,
-//     ...
-//   }
-// }
-```
-
-### Feature detection
-
-```typescript
-import {
-  hasNativeWebSocket,
-  hasNativeFetch,
-  hasWebStreams,
-  hasAbortController,
-  hasFormData,
-  hasBlob,
-  hasFile,
-  hasRandomUUID,
-} from "docling-sdk/platform";
-```
+CI currently runs Node 20; it does not exercise a browser/Bun/Deno/edge matrix.
+The [runtime examples](examples.md#runtime-examples) provide starting points for
+checking the paths your application uses.
 
 ## Related
 
-- [Getting Started](./getting-started.md) -- prerequisites per runtime
-- [Streaming](./streaming.md) -- cross-runtime streaming patterns
-- [Web Client](./web-client.md) -- browser-based OCR
-- [Examples](./examples.md) -- runtime-specific examples
+- [Streaming and File Output](streaming.md) — buffering and payload differences
+- [Getting Started](getting-started.md) — prerequisites
+- [Architecture decisions](../ARCHITECTURE.md#runtime-boundaries) — runtime isolation

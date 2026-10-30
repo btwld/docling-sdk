@@ -298,31 +298,12 @@ const client = new Docling({
 | `onProgress` | `(update: ProgressUpdate) => void` | -- | Progress callback |
 | `onComplete` | `(result: unknown) => void` | -- | Completion callback |
 | `onError` | `(error: Error) => void` | -- | Error callback |
-| `onWebhook` | `(data: Record<string, unknown>) => void` | -- | Webhook callback |
 
-See [Async and Progress](./async-progress.md) for details on progress tracking modes.
+`onWebhook` exists in the config type but is not invoked by the current progress
+tracker. Send application-owned notifications after completion if needed. See
+[Async and Progress](./async-progress.md) for transport and lifecycle details.
 
 ---
-
-## Connection Pool (Node.js)
-
-The Node.js HTTP client uses a connection pool for performance:
-
-```typescript
-import { ConnectionPool } from "docling-sdk";
-```
-
-Default pool settings:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `maxSockets` | `50` | Maximum sockets per host |
-| `maxFreeSockets` | `10` | Maximum idle sockets |
-| `timeout` | `60000` | Unused socket timeout in ms |
-| `keepAliveTimeout` | `30000` | Keep-alive timeout in ms |
-| `keepAlive` | `true` | Enable keep-alive |
-| `maxRequestsPerSocket` | `100` | Max requests per socket |
-| `socketTimeout` | `30000` | Socket timeout in ms |
 
 ## Related
 

@@ -2,228 +2,61 @@
 
 [Home](../README.md) > [Docs](./README.md) > Error Handling
 
-## Error Hierarchy
+## Conversion errors
 
-The SDK defines a hierarchy of error classes in `src/types/index.ts`:
+Ordinary `convert` methods return a `ConvertDocumentResponse` and reject on
+operation errors. Check the response's `status` and `errors` for conversion
+outcomes, including partial success. File-output methods use a separate
+`ConversionFileResult`; see the [Result pattern](#result-pattern) below.
 
-```
-DoclingError (base)
-  DoclingNetworkError     -- HTTP/connection failures
-  DoclingValidationError  -- Invalid options or input
-  DoclingTimeoutError     -- Operation timeout
-  DoclingFileError        -- File read/write failures
-```
+The SDK's error classes are exported from the main entry:
 
-### DoclingError
-
-Base error class with optional `code` and `details`:
-
-```typescript
-try {
-  await client.convert(buffer, "doc.pdf");
-} catch (error) {
-  if (error instanceof DoclingError) {
-    console.log(error.message);
-    console.log(error.code);     // e.g., "NETWORK_ERROR"
-    console.log(error.details);  // additional context
-  }
-}
-```
-
-### DoclingNetworkError
-
-Thrown for HTTP failures. Includes `statusCode` and raw `response`:
+| Class | Meaning | Additional fields |
+|---|---|---|
+| `DoclingError` | Base SDK error | `code`, `details` |
+| `DoclingNetworkError` | HTTP/connection failure | `statusCode`, `response` |
+| `DoclingValidationError` | Invalid input or options | `field`, `value` |
+| `DoclingTimeoutError` | Operation exceeded its timeout | Error message |
+| `DoclingFileError` | File read/write failure | `filePath`, `fileSize` |
 
 ```typescript
+import { DoclingNetworkError } from "docling-sdk";
+
 try {
-  await client.convert(buffer, "doc.pdf");
+  const result = await client.convert(buffer, "doc.pdf");
+  console.log(result.document.md_content);
 } catch (error) {
   if (error instanceof DoclingNetworkError) {
-    console.log(error.statusCode);  // e.g., 502
-    console.log(error.response);    // raw response body
+    console.error(error.statusCode, error.message);
+  } else {
+    throw error;
   }
 }
 ```
 
-### DoclingValidationError
+Errors can also be ordinary JavaScript errors; do not assume every failure is a
+specific SDK subclass.
 
-Thrown when conversion options or input are invalid. Includes the `field` name and offending `value`:
+## CLI errors and retries
 
-```typescript
-try {
-  await client.convert(buffer, "doc.pdf", { table_mode: "invalid" as any });
-} catch (error) {
-  if (error instanceof DoclingValidationError) {
-    console.log(error.field);  // "conversion_options"
-    console.log(error.value);  // the invalid options object
-  }
-}
-```
+The CLI defines `CliError` (with `exitCode`, `stdout`, `stderr`),
+`CliTimeoutError`, and `CliNotFoundError`. Its retry policy distinguishes
+transient, timeout and resource failures from permanent/configuration errors.
+See [CLI retry configuration](cli-client.md#error-classification-and-retry)
+for categories, defaults and the exponential-backoff formula.
 
-### DoclingTimeoutError
+## API retries
 
-Thrown when an operation exceeds its timeout:
-
-```typescript
-try {
-  await client.convert(buffer, "large.pdf");
-} catch (error) {
-  if (error instanceof DoclingTimeoutError) {
-    console.log(error.message);
-    // "Operation convert timed out after 60000ms"
-  }
-}
-```
-
-### DoclingFileError
-
-Thrown for file system operations. Includes `filePath` and `fileSize`:
-
-```typescript
-try {
-  await client.convertFromFile("./missing.pdf");
-} catch (error) {
-  if (error instanceof DoclingFileError) {
-    console.log(error.filePath);
-  }
-}
-```
-
-## CLI Error Classes
-
-The CLI client defines its own error types in `src/types/cli.ts`:
-
-### CliError
-
-Thrown when the Docling CLI process exits with an error:
-
-```typescript
-try {
-  await cliClient.convert("./doc.pdf", "doc.pdf");
-} catch (error) {
-  if (error instanceof CliError) {
-    console.log(error.exitCode);
-    console.log(error.stdout);
-    console.log(error.stderr);
-  }
-}
-```
-
-### CliTimeoutError
-
-Thrown when the CLI process exceeds the configured timeout:
-
-```typescript
-try {
-  await cliClient.convert("./large.pdf", "large.pdf");
-} catch (error) {
-  if (error instanceof CliTimeoutError) {
-    console.log(error.message);
-    // "CLI command timed out after 60000ms"
-  }
-}
-```
-
-### CliNotFoundError
-
-Thrown when the Docling CLI binary cannot be found:
-
-```typescript
-try {
-  const client = new Docling({ cli: {} });
-  await client.convert("./doc.pdf", "doc.pdf");
-} catch (error) {
-  if (error instanceof CliNotFoundError) {
-    console.log(error.message);
-    // "Docling CLI not found"
-  }
-}
-```
-
-## Error Classification (CLI)
-
-The CLI client classifies errors into five types for retry logic:
-
-| Type | Retryable | Examples |
-|------|-----------|----------|
-| `transient` | Yes | Temporary failures, intermittent issues |
-| `timeout` | Yes | Process timeouts |
-| `resource` | Yes | Memory or disk pressure |
-| `permanent` | No | Invalid input, missing files |
-| `configuration` | No | Wrong CLI path, missing Python |
-
-The `retryConfig` in the CLI client controls retry behavior:
-
-```typescript
-// Default retry configuration
-{
-  maxRetries: 3,
-  baseDelay: 1000,        // ms
-  maxDelay: 30000,         // ms
-  backoffMultiplier: 2,
-  retryableErrors: ["transient", "timeout", "resource"],
-}
-```
-
-## API Retry Logic
-
-The HTTP client retries on specific status codes with exponential backoff:
-
-- **408** -- Request Timeout
-- **429** -- Too Many Requests
-- **500** -- Internal Server Error
-- **502** -- Bad Gateway
-- **503** -- Service Unavailable
-- **504** -- Gateway Timeout
-
-Default retry settings:
-
-| Setting | Default |
-|---------|---------|
-| Retries | 3 |
-| Retry delay | 1000 ms |
-| Backoff | Exponential |
+The platform HTTP client passes retry settings to `ofetch`: by default three
+retries, a fixed numeric delay of 1000 ms, and status codes 408, 429, 500, 502,
+503 and 504. This is separate from CLI exponential backoff. Individual transfer
+paths can configure requests differently; do not assume every method retries
+identically. See `src/platform/http.ts` for the implementation.
 
 ## Validation
 
-### ValidationUtils
-
-Static methods for validating inputs before making API calls:
-
-```typescript
-import { ValidationUtils } from "docling-sdk";
-
-ValidationUtils.validateInputFormat("pdf");       // true
-ValidationUtils.validateOutputFormat("md");        // true
-ValidationUtils.validateOcrEngine("easyocr");      // true
-ValidationUtils.validatePdfBackend("dlparse_v2");  // true
-ValidationUtils.validateTableMode("accurate");     // true
-ValidationUtils.validatePageRange([1, 10]);        // true
-ValidationUtils.validateUrl("https://example.com"); // true
-```
-
-### Asserting valid options
-
-Throws `DoclingValidationError` if options are invalid:
-
-```typescript
-import { ValidationUtils } from "docling-sdk";
-
-ValidationUtils.assertValidConversionOptions({
-  to_formats: ["md"],
-  table_mode: "accurate",
-});
-// Passes silently
-
-ValidationUtils.assertValidConversionOptions({
-  to_formats: ["invalid" as any],
-});
-// Throws DoclingValidationError
-```
-
-### Zod validation
-
-Runtime validation with detailed error messages:
+Use `ValidationUtils` for SDK validation helpers or `ZodValidation` for schema
+validation with field-level issues:
 
 ```typescript
 import { ZodValidation } from "docling-sdk";
@@ -232,21 +65,19 @@ const result = ZodValidation.safeValidateConversionOptions({
   to_formats: ["md"],
   do_ocr: true,
 });
-
-if (result.success) {
-  console.log(result.data); // validated options
-} else {
-  console.log(result.error); // Zod error with field-level details
-}
+if (!result.success) console.error(result.error.issues);
 ```
 
-## Safe Methods (Result Pattern)
+See the [TypeScript guide](typescript.md#zod-validation) for more helpers.
 
-Every client exposes `safeConvert` and `safeConvertToFile`, which return `Result<T, E>` instead of throwing:
+## Result pattern
+
+`Result<T, E>` is either `{ success: true, data: T }` or
+`{ success: false, error: E }`. `safeConvert` wraps rejected conversions in this
+shape on all three clients:
 
 ```typescript
 const result = await client.safeConvert(buffer, "doc.pdf");
-
 if (result.success) {
   console.log(result.data.document.md_content);
 } else {
@@ -254,26 +85,36 @@ if (result.success) {
 }
 ```
 
-You can also wrap any async operation with `tryAsync`:
+The file-output contract differs:
+
+| Method | API / CLI | Web |
+|---|---|---|
+| `convertToFile` | Returns `ConversionFileResult`; inspect its `success` and payload | Rejects as unsupported |
+| `safeConvertToFile` | Wraps `ConversionFileResult` in an outer Result | Rejects as unsupported, despite its name |
+
+For API/CLI `safeConvertToFile`, an outer success means the call resolved; the
+inner `data.success` still determines whether file conversion succeeded:
 
 ```typescript
-import { tryAsync } from "docling-sdk";
-
-const result = await tryAsync(() =>
-  client.convert(buffer, "doc.pdf")
-);
-
-if (result.success) {
-  // result.data is ConvertDocumentResponse
+const wrapped = await client.safeConvertToFile(buffer, "doc.pdf", {
+  to_formats: ["md"],
+});
+if (!wrapped.success) {
+  console.error(wrapped.error.message);
+} else if (!wrapped.data.success) {
+  console.error(wrapped.data.error?.message);
 } else {
-  // result.error is the caught Error
+  // Inspect wrapped.data.fileStream or wrapped.data.data for this method/runtime.
 }
 ```
 
-See the [TypeScript guide](./typescript.md) for more on the Result pattern.
+`tryAsync(() => operation())` provides the same outer wrapping for other async
+functions. It catches rejection; it does not reinterpret a resolved failure
+object as a rejected operation.
 
 ## Related
 
-- [TypeScript](./typescript.md) -- Result types and type guards
-- [API Client](./api-client.md) -- safe methods on the API client
-- [CLI Client](./cli-client.md) -- CLI error handling
+- [Streaming and File Output](streaming.md) — payload availability and buffering
+- [API Client](api-client.md) — API operations
+- [CLI Client](cli-client.md) — local execution and retry behavior
+- [Web Client](web-client.md) — browser OCR capabilities

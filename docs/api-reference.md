@@ -2,7 +2,10 @@
 
 [Home](../README.md) > [Docs](./README.md) > API Reference
 
-Method-by-method reference for all three client types.
+Method-by-method reference for all three client types. Browser entry exports
+differ from the Node main factory; see [entry points](cross-runtime.md#entry-points).
+For nested safe file results, see [error handling](error-handling.md#result-pattern);
+for buffering and runtime limits, see [streaming](streaming.md#method-behavior).
 
 ---
 
@@ -75,7 +78,7 @@ function createWebClient(
 | Method | Signature | Returns |
 |--------|-----------|---------|
 | `convertFile` | `(params: FileUploadParams) => Promise<ConvertDocumentResponse>` | Document with content |
-| `convertToFile` | `(file, filename, options, progress?) => Promise<ConversionFileResult>` | ZIP stream/data |
+| `convertToFile` | `(file, filename, options) => Promise<ConversionFileResult>` | Buffered ZIP: `fileStream` if internal `isNode()` is true (including Deno 2.9.6), otherwise `data` bytes |
 
 ### Source Conversion
 
@@ -93,9 +96,9 @@ function createWebClient(
 
 | Method | Signature | Returns |
 |--------|-----------|---------|
-| `convertToStream` | `(file, filename, writable, options?) => Promise<void>` | Streams to writable |
+| `convertToStream` | `(file, filename, writable, options?, returnAsZip?) => Promise<{ success: boolean; error?: { message: string; details?: string } }>` | Writes output; inspect success |
 | `convertStream` | `(inputStream, filename, options?) => Promise<ConvertDocumentResponse>` | Document |
-| `convertStreamToFile` | `(inputStream, filename, options) => Promise<ConversionFileResult>` | ZIP stream/data |
+| `convertStreamToFile` | `(inputStream, filename, options) => Promise<ConversionFileResult>` | Node ZIP download stream |
 
 ### Async Conversion
 
@@ -107,7 +110,7 @@ function createWebClient(
 | `convertSourceAsync` | `(request: ConvertDocumentsRequest) => Promise<AsyncConversionTask>` | Task object |
 | `pollTaskStatus` | `(taskId, waitSeconds?) => Promise<TaskStatusResponse>` | Status |
 | `getTaskResult` | `(taskId) => Promise<ConvertDocumentResponse \| PresignedUrlConvertDocumentResponse>` | JSON result |
-| `getTaskResultFile` | `(taskId) => Promise<ConversionFileResult>` | ZIP stream/data |
+| `getTaskResultFile` | `(taskId) => Promise<ConversionFileResult>` | Node ZIP download stream |
 
 ### Chunking
 
@@ -205,9 +208,9 @@ function createWebClient(
 | `extractText` | `(file, filename, options?) => Promise<ConvertDocumentResponse>` | Document |
 | `convertDocument` | `(file, filename, options) => Promise<ConvertDocumentResponse>` | Document |
 | `process` | `(file, filename, options?) => Promise<ConvertDocumentResponse>` | Document |
-| `convertToFile` | `(file, filename, options) => Promise<ConversionFileResult>` | ZIP |
+| `convertToFile` | `(file, filename, options) => Promise<ConversionFileResult>` | Rejects: unsupported |
 | `safeConvert` | `(file, filename, options?) => Promise<SafeConversionResult>` | Result |
-| `safeConvertToFile` | `(file, filename, options) => Promise<SafeFileConversionResult>` | Result |
+| `safeConvertToFile` | `(file, filename, options) => Promise<SafeFileConversionResult>` | Rejects: unsupported |
 
 ### Events
 

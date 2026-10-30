@@ -2,7 +2,9 @@
 
 [Home](../README.md) > [Docs](./README.md) > Web Client
 
-The Web client runs OCR entirely in the browser using the IBM Granite Docling 258M model via WebGPU or WASM. No server is required.
+The Web client runs image OCR in a browser worker using the Granite Docling
+model via WebGPU or WASM. Conversion needs no Docling server; model assets are
+downloaded remotely and persisted using the Cache API.
 
 ## Prerequisites
 
@@ -36,24 +38,14 @@ import { createWebClient } from "docling-sdk/web";
 const client = createWebClient({ device: "webgpu" });
 ```
 
-Or through the main factory:
-
-```typescript
-import { Docling } from "docling-sdk";
-
-const client = new Docling({
-  web: {
-    device: "webgpu",
-    maxNewTokens: 4096,
-  },
-});
-```
+For worker URL configuration, see [worker bundling](cross-runtime.md#browser-local-ocr-and-worker-bundling).
 
 ## Lifecycle
 
 ### Initialize
 
-Download and load the model. The first call downloads the model (~500 MB), which is then cached in IndexedDB:
+Download and load the model. The initial download can be large and depends on
+the model assets; subsequent loads use the `hf-model-cache` Cache API store:
 
 ```typescript
 client.on("loading", ({ progress, status }) => {
@@ -144,6 +136,11 @@ const html = await client.toHtml(pdfBuffer, "doc.pdf");
 const text = await client.extractText(pdfBuffer, "doc.pdf");
 ```
 
+Office formats such as DOCX/PPTX and HTML are not parsed by this client.
+`convertToFile` and `safeConvertToFile` reject as unsupported; use the conversion
+response or `processImage` outputs instead. `processImage` permits one image at
+a time and requires initialization. Call `destroy()` when finished.
+
 ## Events
 
 Subscribe to events with `on` and unsubscribe with `off`:
@@ -163,7 +160,7 @@ client.on("status", ({ status }) => {
 
 client.on("stream", ({ chunk, progress }) => {
   // Streaming tokens during inference
-  process.stdout.write(chunk);
+  console.log(chunk);
 });
 
 client.on("complete", (result) => {
@@ -186,7 +183,7 @@ client.on("error", ({ message, code }) => {
 
 ## Cache Management
 
-The model is cached in IndexedDB after the first download:
+Model assets persist in the `hf-model-cache` Cache API store after download:
 
 ```typescript
 // Get cache size in bytes
@@ -203,7 +200,7 @@ The `docling-sdk/web` entry point exports converter and extractor functions that
 
 ### Converters
 
-Convert a `WebOCRDocument` (the `.json` field of `WebOCRResult`) to different formats:
+Convert raw DocTags markup (`result.raw`) to output formats:
 
 ```typescript
 import {
@@ -213,10 +210,10 @@ import {
   doclingToJson,
 } from "docling-sdk/web";
 
-const html = doclingToHtml(result.json);
-const markdown = doclingToMarkdown(result.json);
-const text = doclingToPlainText(result.json);
-const json = doclingToJson(result.json);
+const html = doclingToHtml(result.raw);
+const markdown = doclingToMarkdown(result.raw);
+const text = doclingToPlainText(result.raw);
+const json = doclingToJson(result.raw);
 ```
 
 ### Extractors
@@ -226,7 +223,7 @@ Extract structured data from the document:
 ```typescript
 import { extractTables, tableToCSV, extractOverlays } from "docling-sdk/web";
 
-const tables = extractTables(result.json);
+const tables = extractTables(result.raw);
 for (const table of tables) {
   console.log(table.headers);
   console.log(table.rows);
