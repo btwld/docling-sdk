@@ -61,9 +61,14 @@ when only `createAPIClient` is used. That dependency chain reads environment
 variables (including `GRACEFUL_FS_PLATFORM`), so importing without `--allow-env`
 fails on Deno 2.9.6 before any API request. Environment-based S3 credentials also
 need env access; saving output needs `--allow-write`.
-For ZIP bytes outside Node, use the API client's `convertToFile`
-and inspect `data`. Async download methods do not provide the same byte fallback;
-see [transfer behavior](streaming.md#method-behavior).
+
+For API `convertToFile`, check `success`, then inspect whether `fileStream` or
+`data` is present. The byte fallback runs only when the SDK's internal `isNode()`
+returns false. On Deno 2.9.6, both `isNode()` and `isDeno()` return true, so a
+successful ZIP conversion returns a Node-compatible `fileStream`, without `data`.
+Consume that stream or collect its chunks if you need bytes. Async download
+methods do not provide the byte fallback; see
+[transfer behavior](streaming.md#method-behavior).
 
 ## Browser API conversion
 

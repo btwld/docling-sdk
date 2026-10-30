@@ -156,8 +156,11 @@ console.log(result.document.md_content);
 
 ### convertToFile
 
-Buffers a ZIP result, returning a Node readable over those bytes or `data`
-outside Node:
+Buffers a ZIP result, returning `fileStream` (a Node readable) when the SDK's
+internal `isNode()` is true, otherwise `data` (bytes). On Deno 2.9.6, both
+`isNode()` and `isDeno()` return true, so the result has `fileStream`, without
+`data`. Check the actual payload rather than inferring it from the runtime name.
+For a Node stream destination:
 
 ```typescript
 import { createWriteStream } from "node:fs";
@@ -174,8 +177,8 @@ if (result.success && result.fileStream) {
 The `ConversionFileResult` contains:
 
 - `success` -- whether the conversion succeeded
-- `fileStream` -- Node.js readable stream (Node.js only)
-- `data` -- raw `Uint8Array` (browser, Deno, Bun)
+- `fileStream` -- Node-compatible readable stream when internal `isNode()` is true, including on Deno 2.9.6
+- `data` -- raw `Uint8Array` when internal `isNode()` is false
 - `fileMetadata` -- `{ filename, contentType, size }`
 - `error` -- error details on failure
 

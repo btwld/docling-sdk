@@ -10,14 +10,17 @@ has several transfer paths with different buffering and runtime requirements.
 | API client method | Input / output | Current behavior |
 |---|---|---|
 | `convertToStream` (default content mode) | Bytes → writable | Receives the JSON conversion response before writing content; the result can be buffered |
-| `convertToFile` | Bytes → ZIP result | Buffers the ZIP; returns a Node readable wrapping those bytes, or `data: Uint8Array` outside Node |
+| `convertToFile` | Bytes → ZIP result | Buffers the ZIP; returns `fileStream` (a Node readable) when the SDK's internal `isNode()` is true, otherwise `data: Uint8Array` |
 | `convertStream` | Node readable → document | Accepts a Node input stream; the multipart encoder collects input chunks before upload |
 | `convertStreamToFile` | Node readable → ZIP result | Buffers multipart input, submits asynchronously and returns a Node download stream after completion; no portable byte fallback |
 | `getTaskResultFile` | Task ID → ZIP result | Uses the Node download-stream path; no portable byte fallback |
 
-For portable ZIP bytes, use the API client's `convertToFile` and inspect `data`.
-Do not assume async file-output methods offer the same fallback. Web OCR does
-not support `convertToFile` or `safeConvertToFile`.
+For API `convertToFile`, check `success`, then inspect the returned payload field.
+The runtime checks can overlap: on Deno 2.9.6, both `isNode()` and `isDeno()` return
+true, so this method returns `fileStream`, without `data`. The byte fallback is
+selected by `!isNode()`, not by the runtime's name. Async file-output methods do
+not offer this fallback. Web OCR does not support `convertToFile` or
+`safeConvertToFile`.
 
 ## Write converted content (Node)
 
@@ -65,9 +68,11 @@ successful result has `fileStream` (a Node readable) or `data` (bytes), plus
 `fileMetadata` with filename, content type and optional size. On failure inspect
 `error`. Always check the payload field expected from the selected method.
 
-Outside Node, a successful API `convertToFile` result can be saved using
-`Bun.write`, `Deno.writeFile`, or a browser `Blob` download. Deno file output
-requires `--allow-write` in addition to permissions needed for conversion.
+When `data` is present, save those bytes using `Bun.write`, `Deno.writeFile`, or a
+browser `Blob` download as appropriate. When `fileStream` is present (including
+on Deno 2.9.6), use a compatible Node stream destination or collect its byte chunks
+before passing bytes to a runtime file API. Deno file output requires
+`--allow-write` in addition to permissions needed for conversion.
 
 ## Related
 

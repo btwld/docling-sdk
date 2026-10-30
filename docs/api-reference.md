@@ -78,7 +78,7 @@ function createWebClient(
 | Method | Signature | Returns |
 |--------|-----------|---------|
 | `convertFile` | `(params: FileUploadParams) => Promise<ConvertDocumentResponse>` | Document with content |
-| `convertToFile` | `(file, filename, options) => Promise<ConversionFileResult>` | Buffered ZIP: Node stream or portable bytes |
+| `convertToFile` | `(file, filename, options) => Promise<ConversionFileResult>` | Buffered ZIP: `fileStream` if internal `isNode()` is true (including Deno 2.9.6), otherwise `data` bytes |
 
 ### Source Conversion
 
