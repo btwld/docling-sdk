@@ -295,7 +295,22 @@ const ws = new DoclingWebSocketClient({
 
 The `AsyncTaskManager` handles task submission, polling, and event emission.
 Services create their own instances; there is no process-wide task registry.
-Call `client.destroy()` when finished to stop service polling/timers. A separately
+For the API client, `client.destroy()` clears the file service's task manager and
+its registered polling/timeout timers. It calls `ChunkService.destroy()`, but
+that method is currently empty: tasks registered with the chunk manager and
+their timers survive.
+Explicitly destroy the chunk service's manager when finished:
+
+```typescript
+client.chunks.getTaskManager().destroy();
+client.destroy();
+```
+
+`client.getTaskManager()` returns only the file service's manager; calling its
+`destroy()` does not clean up chunk tasks. Manager cleanup removes registered
+local tasks and timers; it does not abort in-flight HTTP requests or cancel
+server-side work. An in-flight poll can still schedule another timer after
+cleanup, so this is not a guarantee that all polling has stopped. A separately
 created progress tracker also needs `stopTracking()`.
 
 Observe the file service manager through the client:

@@ -74,8 +74,11 @@ Date: 2026-10-30 · Observed active · Reconstructed
 Track server task completion separately from progress delivery so completion
 does not depend on WebSocket updates; hybrid progress falls back to HTTP on
 WebSocket errors or an initial timeout without progress.
-Separate service managers and progress trackers own polling/timers and require
-cleanup; application webhook delivery belongs to the caller.
+Separate service managers and progress trackers own polling/timers; API
+`client.destroy()` clears the file manager, while the chunk manager needs explicit
+`client.chunks.getTaskManager().destroy()` because `ChunkService.destroy()` is empty.
+Caller-owned progress trackers need `stopTracking()`, and application webhook
+delivery belongs to the caller.
 
 Evidence: [task manager](src/services/async-task-manager.ts),
 [progress tracker](src/services/progress-tracker.ts), [usage](docs/async-progress.md).
