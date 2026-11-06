@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 
 import type {
@@ -9,6 +9,7 @@ import type {
   CliResult,
 } from "../types";
 import { CliError, CliNotFoundError, CliTimeoutError } from "../types";
+import { ProcessTimeoutError, runProcess } from "./process-runner";
 
 /**
  * CLI execution utilities
@@ -49,65 +50,6 @@ export class CliUtils {
   }
 
   /**
-   * Forward parent termination signals to child; return a cleanup function.
-   */
-  private forwardSignals(child: ChildProcess): () => void {
-    const onSigint = () => {
-      this.gracefulTerminate(child);
-      this.forceTerminateAfter(child, 500);
-    };
-    const onSigterm = () => {
-      this.gracefulTerminate(child);
-      this.forceTerminateAfter(child, 500);
-    };
-
-    process.on("SIGINT", onSigint);
-    process.on("SIGTERM", onSigterm);
-
-    return () => {
-      process.off("SIGINT", onSigint);
-      process.off("SIGTERM", onSigterm);
-    };
-  }
-
-  /**
-   * Try graceful termination first.
-   */
-  private gracefulTerminate(child: ChildProcess): void {
-    if (!child.killed) {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // Ignore errors
-        // Ignore errors when killing process
-      }
-    }
-  }
-
-  /**
-   * Ensure process is terminated after delay; on Windows, kills tree via taskkill.
-   */
-  private forceTerminateAfter(child: ChildProcess, delayMs: number): void {
-    setTimeout(() => {
-      if (!child.killed) {
-        if (process.platform === "win32" && typeof child.pid === "number") {
-          spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
-            stdio: "ignore",
-            shell: true,
-          });
-        } else {
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            // Ignore errors
-            // Ignore errors when force killing process
-          }
-        }
-      }
-    }, delayMs);
-  }
-
-  /**
    * Check if Docling CLI is available
    */
   async checkAvailability(): Promise<boolean> {
@@ -125,18 +67,11 @@ export class CliUtils {
    * Get Docling version information
    */
   async getVersion(): Promise<string> {
-    try {
-      const result = await this.execute(["--version"], { timeout: 10000 });
-      if (!result.success) {
-        throw new CliError("Failed to get version", result.exitCode, result.stdout, result.stderr);
-      }
-      return result.stdout.trim();
-    } catch (error) {
-      if (error instanceof CliError) {
-        throw error;
-      }
-      throw new CliNotFoundError(this.config.doclingPath);
+    const result = await this.execute(["--version"], { timeout: 10000 });
+    if (!result.success) {
+      throw new CliError("Failed to get version", result.exitCode, result.stdout, result.stderr);
     }
+    return result.stdout.trim();
   }
 
   /**
@@ -144,7 +79,7 @@ export class CliUtils {
    */
   async execute(args: string[], options: CliExecutionOptions = {}): Promise<CliResult> {
     const doclingPath = this.config.doclingPath || "docling";
-    return this.executeCommand(doclingPath, args, options);
+    return this.runCommand(doclingPath, args, options);
   }
 
   /**
@@ -152,78 +87,33 @@ export class CliUtils {
    */
   async executeTools(args: string[], options: CliExecutionOptions = {}): Promise<CliResult> {
     const doclingToolsPath = this.config.doclingToolsPath || "docling-tools";
-    return this.executeCommand(doclingToolsPath, args, options);
+    return this.runCommand(doclingToolsPath, args, options);
   }
 
-  /**
-   * Execute a command with the specified executable
-   */
-  private async executeCommand(
+  private async runCommand(
     executable: string,
     args: string[],
-    options: CliExecutionOptions = {}
+    options: CliAsyncOptions
   ): Promise<CliResult> {
-    const execOptions = {
-      timeout: options.timeout || this.config.timeout,
-      cwd: options.cwd || this.config.cwd,
-      env: { ...process.env, ...this.config.env, ...options.env },
-    };
-
-    return new Promise<CliResult>((resolve, reject) => {
-      const cmd = this.normalizeExecutable(executable);
-      const child: ChildProcess = spawn(cmd, args, {
-        cwd: execOptions.cwd,
-        env: execOptions.env,
-        stdio: options.stdio || "pipe",
-        shell: false,
-        detached: process.platform !== "win32",
+    try {
+      const result = await runProcess(this.normalizeExecutable(executable), args, {
+        timeout: options.timeout ?? this.config.timeout,
+        cwd: options.cwd ?? this.config.cwd,
+        env: { ...process.env, ...this.config.env, ...options.env },
+        stdio: options.stdio,
+        signal: options.signal,
+        maxBuffer: options.maxBuffer,
+        onStdout: (data) => options.onProgress?.({ type: "stdout", data }),
+        onStderr: (data) => options.onProgress?.({ type: "stderr", data }),
       });
-
-      const cleanupSignals = this.forwardSignals(child);
-
-      let stdout = "";
-      let stderr = "";
-      let timeoutId: NodeJS.Timeout | null = null;
-
-      const timeout = execOptions.timeout;
-      if (timeout && timeout > 0) {
-        timeoutId = setTimeout(() => {
-          this.gracefulTerminate(child);
-
-          this.forceTerminateAfter(child, 500);
-          reject(new CliTimeoutError(timeout));
-        }, timeout);
+      return { ...result, exitCode: result.exitCode ?? -1 };
+    } catch (error) {
+      if (error instanceof ProcessTimeoutError) throw new CliTimeoutError(error.timeout);
+      if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
+        throw new CliNotFoundError(executable);
       }
-
-      if (child.stdout) {
-        child.stdout.on("data", (data: Buffer) => {
-          stdout += data.toString();
-        });
-      }
-
-      if (child.stderr) {
-        child.stderr.on("data", (data: Buffer) => {
-          stderr += data.toString();
-        });
-      }
-
-      child.on("close", (code: number | null) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        cleanupSignals();
-        const exitCode = code ?? 0;
-        resolve({ success: exitCode === 0, stdout, stderr, exitCode });
-      });
-
-      child.on("error", (error: Error & { code?: string }) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        cleanupSignals();
-        if (error.code === "ENOENT") {
-          reject(new CliNotFoundError(executable));
-        } else {
-          reject(error);
-        }
-      });
-    });
+      throw error;
+    }
   }
 
   /**
@@ -231,7 +121,7 @@ export class CliUtils {
    */
   async executeAsync(args: string[], options: CliAsyncOptions = {}): Promise<CliResult> {
     const doclingPath = this.config.doclingPath || "docling";
-    return this.executeCommandAsync(doclingPath, args, options);
+    return this.runCommand(doclingPath, args, options);
   }
 
   /**
@@ -239,98 +129,7 @@ export class CliUtils {
    */
   async executeToolsAsync(args: string[], options: CliAsyncOptions = {}): Promise<CliResult> {
     const doclingToolsPath = this.config.doclingToolsPath || "docling-tools";
-    return this.executeCommandAsync(doclingToolsPath, args, options);
-  }
-
-  /**
-   * Execute a command asynchronously with the specified executable
-   */
-  private async executeCommandAsync(
-    executable: string,
-    args: string[],
-    options: CliAsyncOptions = {}
-  ): Promise<CliResult> {
-    return new Promise((resolve, reject) => {
-      const execOptions = {
-        cwd: options.cwd || this.config.cwd,
-        env: { ...process.env, ...this.config.env, ...options.env },
-        stdio: options.stdio || "pipe",
-      };
-
-      const cmd = this.normalizeExecutable(executable);
-      const child: ChildProcess = spawn(cmd, args, {
-        cwd: execOptions.cwd,
-        env: execOptions.env,
-        stdio: execOptions.stdio,
-        shell: false,
-        detached: process.platform !== "win32",
-      });
-
-      const cleanupSignals = this.forwardSignals(child);
-
-      let stdout = "";
-      let stderr = "";
-      let timeoutId: NodeJS.Timeout | null = null;
-
-      const timeout = options.timeout || this.config.timeout;
-      if (timeout && timeout > 0) {
-        timeoutId = setTimeout(() => {
-          this.gracefulTerminate(child);
-          this.forceTerminateAfter(child, 500);
-          reject(new CliTimeoutError(timeout));
-        }, timeout);
-      }
-
-      if (child.stdout) {
-        child.stdout.on("data", (data: Buffer) => {
-          const chunk = data.toString();
-          stdout += chunk;
-          if (options.onProgress) {
-            options.onProgress({ type: "stdout", data: chunk });
-          }
-        });
-      }
-
-      if (child.stderr) {
-        child.stderr.on("data", (data: Buffer) => {
-          const chunk = data.toString();
-          stderr += chunk;
-          if (options.onProgress) {
-            options.onProgress({ type: "stderr", data: chunk });
-          }
-        });
-      }
-
-      child.on("close", (code: number | null) => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        cleanupSignals();
-
-        const exitCode = code || 0;
-        const result: CliResult = {
-          success: exitCode === 0,
-          stdout,
-          stderr,
-          exitCode,
-        };
-
-        resolve(result);
-      });
-
-      child.on("error", (error: Error) => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        cleanupSignals();
-
-        if ((error as { code?: string }).code === "ENOENT") {
-          reject(new CliNotFoundError(executable));
-        } else {
-          reject(error);
-        }
-      });
-    });
+    return this.runCommand(doclingToolsPath, args, options);
   }
 
   /**

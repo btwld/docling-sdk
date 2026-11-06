@@ -110,7 +110,9 @@ export interface CliResult {
   success: boolean;
   stdout: string;
   stderr: string;
+  /** Numeric exit status; -1 indicates signal termination or no exit status. */
   exitCode: number;
+  signal?: NodeJS.Signals | null;
   error?: Error | undefined;
 }
 
@@ -173,7 +175,11 @@ export type CliModelsCommand = "download";
  * CLI execution options
  */
 export interface CliExecutionOptions {
+  /** Milliseconds; zero disables the timeout, including the configured default. */
   timeout?: number;
+  signal?: AbortSignal;
+  /** Combined stdout/stderr byte limit; defaults to 10 MiB. */
+  maxBuffer?: number;
   cwd?: string;
   env?: Record<string, string>;
   stdio?: "pipe" | "inherit" | "ignore";
@@ -228,10 +234,24 @@ export class CliNotFoundError extends Error {
  */
 export const CliValidation = {
   isValidInputFormat: (format: string): format is InputFormat =>
-    ["docx", "pptx", "html", "image", "pdf", "asciidoc", "md", "xlsx"].includes(format),
+    [
+      "docx",
+      "pptx",
+      "html",
+      "image",
+      "pdf",
+      "asciidoc",
+      "md",
+      "csv",
+      "xlsx",
+      "xml_uspto",
+      "xml_jats",
+      "json_docling",
+      "audio",
+    ].includes(format),
 
   isValidOutputFormat: (format: string): format is OutputFormat =>
-    ["md", "json", "html", "text", "doctags"].includes(format),
+    ["md", "json", "html", "html_split_page", "text", "doctags"].includes(format),
 
   isValidOcrEngine: (engine: string): engine is OcrEngine =>
     ["easyocr", "tesserocr", "tesseract", "rapidocr", "ocrmac"].includes(engine),
@@ -245,7 +265,7 @@ export const CliValidation = {
     ["embedded", "placeholder", "referenced"].includes(mode),
 
   isValidProcessingPipeline: (pipeline: string): pipeline is ProcessingPipeline =>
-    ["standard", "vlm"].includes(pipeline),
+    ["standard", "vlm", "asr"].includes(pipeline),
 
   isValidVlmModel: (model: string): model is CliVlmModelType =>
     ["smoldocling", "granite_vision", "smolvlm"].includes(model),
