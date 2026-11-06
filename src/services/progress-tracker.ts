@@ -1,17 +1,9 @@
-/**
- * Progress tracker that combines WebSocket and HTTP polling
- * Uses cross-runtime event emitter and timers
- */
-
+/** Progress tracking with WebSocket monitoring and a serial HTTP fallback. */
 import type { HttpClient } from "../api/http";
 import { DoclingWebSocketClient } from "../clients/websocket-client";
 import { CrossEventEmitter } from "../platform/events";
-import { delay } from "../platform/timers";
 import type { ProgressConfig, ProgressUpdate } from "../types/client";
 
-/**
- * Progress events that can be emitted
- */
 export interface ProgressEvents {
   [key: string]: unknown;
   progress: ProgressUpdate;
@@ -19,235 +11,219 @@ export interface ProgressEvents {
   error: Error;
 }
 
-/**
- * No-operation function for default callbacks
- */
 function noop(): void {
-  // Intentionally empty - no-op function
+  // Default optional callback.
 }
 
-/**
- * Progress tracker that combines WebSocket and HTTP polling
- * Always tries WebSocket first, falls back to HTTP polling if needed
- */
 export class ProgressTracker extends CrossEventEmitter<ProgressEvents> {
   private config: Required<ProgressConfig>;
   private wsClient: DoclingWebSocketClient | null = null;
-  private httpClient: HttpClient;
-  private pollTimer: ReturnType<typeof globalThis.setInterval> | null = null;
+  private pollTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private fallbackTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private generation = 0;
   private isActive = false;
-  private currentTaskId: string | null = null;
-  private lastProgressTime = 0;
+  private polling = false;
+  private destroyed = false;
+  private handlingError = false;
 
-  constructor(httpClient: HttpClient, baseUrl: string, config: ProgressConfig = {}) {
+  constructor(
+    private httpClient: HttpClient,
+    baseUrl: string,
+    config: ProgressConfig = {}
+  ) {
     super();
-
-    this.httpClient = httpClient;
-
     this.config = {
-      method: config.method || "hybrid",
-      websocketTimeout: config.websocketTimeout || 5000,
-      httpPollInterval: config.httpPollInterval || 1000,
-      onProgress: config.onProgress || noop,
-      onComplete: config.onComplete || noop,
-      onError: config.onError || noop,
-      onWebhook: config.onWebhook || noop,
+      method: config.method ?? "hybrid",
+      websocketTimeout: config.websocketTimeout ?? 5000,
+      httpPollInterval: config.httpPollInterval ?? 1000,
+      onProgress: config.onProgress ?? noop,
+      onComplete: config.onComplete ?? noop,
+      onError: config.onError ?? noop,
+      onWebhook: config.onWebhook ?? noop,
     };
-
     if (this.config.method === "hybrid" || this.config.method === "websocket") {
       this.wsClient = new DoclingWebSocketClient({
         baseUrl,
         timeout: this.config.websocketTimeout,
-        reconnectAttempts: 3,
-        reconnectDelay: 2000,
-        heartbeatInterval: 30000,
+        reconnectAttempts: 0,
       });
     }
   }
 
-  /** Start tracking progress for a task */
   async startTracking(taskId: string): Promise<void> {
-    if (this.isActive) {
-      await this.stopTracking();
-    }
-
+    if (this.destroyed) throw new Error("Progress tracker has been destroyed");
+    // stopTracking invalidates callbacks synchronously, including pending HTTP requests.
+    void this.stopTracking();
+    const generation = this.generation;
     this.isActive = true;
-    this.currentTaskId = taskId;
-    this.lastProgressTime = Date.now();
-
-    try {
-      if (
-        this.wsClient &&
-        (this.config.method === "hybrid" || this.config.method === "websocket")
-      ) {
-        await this.startWebSocketTracking(taskId);
-      } else {
-        this.startHttpPolling(taskId);
-      }
-    } catch (error) {
-      if (this.config.method === "hybrid") {
-        console.warn("WebSocket failed, falling back to HTTP polling:", error);
-        this.startHttpPolling(taskId);
-      } else {
-        await this.handleError(error as Error);
-      }
+    const current = () => this.isCurrent(generation) && this.isActive;
+    if (!this.wsClient) {
+      this.startHttpPolling(taskId, generation);
+      return;
     }
-  }
-
-  /** Stop tracking progress */
-  async stopTracking(): Promise<void> {
-    this.isActive = false;
-
-    if (this.pollTimer) {
-      globalThis.clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-
-    if (this.wsClient) {
-      try {
-        this.wsClient.removeAllListeners();
-      } catch {
-        // Ignore errors
-        /* no-op */
-      }
-    }
-
-    this.currentTaskId = null;
-  }
-
-  /** Start WebSocket tracking with timeout fallback */
-  private async startWebSocketTracking(taskId: string): Promise<void> {
-    if (!this.wsClient) return;
 
     this.wsClient.on("progress", (progress) => {
+      if (!current() || progress.taskId !== taskId) return;
       this.handleProgress({
         ...progress,
-        taskId,
-        timestamp: Date.now(),
+        stage: progress.status === "success" ? "completed" : progress.stage,
         source: "websocket",
       });
+      if (!current()) return;
+      if (progress.status === "success" || progress.status === "failure") {
+        void this.handleCompletion(progress.status === "success", taskId, generation);
+      } else this.armFallback(taskId, generation);
     });
-
-    this.wsClient.on("status", (statusData: [string, string]) => {
-      const [status, receivedTaskId] = statusData;
-      if (receivedTaskId === taskId) {
-        this.handleProgress({
-          stage: status === "success" ? "completed" : status,
-          ...(status === "success" && { percentage: 100 }),
-          message: `Task ${status}`,
-          taskId: taskId,
-          status,
-          timestamp: Date.now(),
-          source: "websocket",
-        });
-
-        if (status === "success" || status === "failure") {
-          this.handleCompletion(status === "success");
-        }
-      }
+    this.wsClient.on("taskError", (error) => {
+      if (current()) void this.handleError(new Error(error.message), generation);
     });
-
     this.wsClient.on("error", (error) => {
-      if (this.config.method === "hybrid" && this.isActive) {
-        console.warn("WebSocket error, falling back to HTTP polling:", error);
-        this.startHttpPolling(taskId);
-      } else {
-        this.handleError(error);
-      }
+      if (!current()) return;
+      if (this.config.method === "hybrid") this.startHttpPolling(taskId, generation);
+      else void this.handleError(error, generation);
     });
-
-    await this.wsClient.connectToTask(taskId);
-
-    if (this.config.method === "hybrid") {
-      this.setupWebSocketTimeout(taskId);
+    this.wsClient.on("disconnected", () => {
+      if (!current()) return;
+      if (this.config.method === "hybrid") this.startHttpPolling(taskId, generation);
+      else void this.handleError(new Error("WebSocket disconnected"), generation);
+    });
+    try {
+      await this.wsClient.connectToTask(taskId);
+      if (current() && !this.polling) this.armFallback(taskId, generation);
+    } catch (error) {
+      if (!current()) return;
+      if (this.config.method === "hybrid") this.startHttpPolling(taskId, generation);
+      else await this.handleError(error as Error, generation);
     }
   }
 
-  /** Start HTTP polling */
-  private startHttpPolling(taskId: string): void {
-    if (this.pollTimer) {
-      globalThis.clearInterval(this.pollTimer);
-    }
+  async stopTracking(): Promise<void> {
+    this.generation++;
+    this.isActive = false;
+    this.polling = false;
+    this.handlingError = false;
+    this.clearTimers();
+    this.wsClient?.removeAllListeners();
+    this.wsClient?.disconnect();
+  }
 
-    this.pollTimer = globalThis.setInterval(async () => {
-      if (!this.isActive || this.currentTaskId !== taskId) {
-        return;
+  destroy(): void {
+    this.destroyed = true;
+    void this.stopTracking();
+    this.removeAllListeners();
+  }
+
+  private isCurrent(generation: number): boolean {
+    return !this.destroyed && generation === this.generation;
+  }
+
+  private clearTimers(): void {
+    if (this.pollTimer !== null) globalThis.clearTimeout(this.pollTimer);
+    if (this.fallbackTimer !== null) globalThis.clearTimeout(this.fallbackTimer);
+    this.pollTimer = null;
+    this.fallbackTimer = null;
+  }
+
+  private armFallback(taskId: string, generation: number): void {
+    if (this.config.method !== "hybrid" || this.polling) return;
+    if (this.fallbackTimer !== null) globalThis.clearTimeout(this.fallbackTimer);
+    this.fallbackTimer = globalThis.setTimeout(() => {
+      if (this.isCurrent(generation) && this.isActive) {
+        this.startHttpPolling(taskId, generation);
       }
+    }, this.config.websocketTimeout);
+  }
 
+  private startHttpPolling(taskId: string, generation: number): void {
+    if (!this.isCurrent(generation) || !this.isActive || this.polling) return;
+    this.polling = true;
+    this.clearTimers();
+    this.wsClient?.removeAllListeners();
+    this.wsClient?.disconnect();
+    const poll = async () => {
+      if (!this.isCurrent(generation) || !this.isActive) return;
       try {
-        const status = await this.httpClient.get<{
+        const { data } = await this.httpClient.get<{
           task_status: string;
           task_position?: number;
-        }>(`/v1/status/${taskId}`);
-        const taskData = status.data;
-
+        }>(`/v1/status/${encodeURIComponent(taskId)}`);
+        if (!this.isCurrent(generation) || !this.isActive) return;
         this.handleProgress({
-          stage: taskData.task_status === "success" ? "completed" : taskData.task_status,
-          ...(taskData.task_status === "success" && { percentage: 100 }),
-          message: `Task ${taskData.task_status}`,
-          taskId: taskId,
-          ...(taskData.task_position !== undefined && {
-            position: taskData.task_position,
-          }),
-          status: taskData.task_status,
+          stage: data.task_status === "success" ? "completed" : data.task_status,
+          ...(data.task_status === "success" && { percentage: 100 }),
+          message: `Task ${data.task_status}`,
+          taskId,
+          position: data.task_position,
+          status: data.task_status,
           timestamp: Date.now(),
           source: "http",
         });
-
-        if (taskData.task_status === "success" || taskData.task_status === "failure") {
-          this.handleCompletion(taskData.task_status === "success");
+        if (!this.isCurrent(generation) || !this.isActive) return;
+        if (data.task_status === "success" || data.task_status === "failure") {
+          await this.handleCompletion(data.task_status === "success", taskId, generation);
+        } else {
+          this.pollTimer = globalThis.setTimeout(poll, this.config.httpPollInterval);
         }
       } catch (error) {
-        await this.handleError(error as Error);
+        if (this.isCurrent(generation)) await this.handleError(error as Error, generation);
       }
-    }, this.config.httpPollInterval);
+    };
+    this.pollTimer = globalThis.setTimeout(poll, this.config.httpPollInterval);
   }
 
-  /** Setup WebSocket timeout using cross-runtime delay */
-  private async setupWebSocketTimeout(taskId: string): Promise<void> {
-    await delay(this.config.websocketTimeout);
-
-    if (this.isActive && Date.now() - this.lastProgressTime > this.config.websocketTimeout) {
-      console.warn("WebSocket timeout, falling back to HTTP polling");
-      this.startHttpPolling(taskId);
-    }
-  }
-
-  private async handleProgress(progress: ProgressUpdate): Promise<void> {
+  private handleProgress(progress: ProgressUpdate): void {
     try {
       this.config.onProgress(progress);
       this.emit("progress", progress);
-      this.lastProgressTime = Date.now();
     } catch (error) {
       console.error("Error in progress callback:", error);
     }
   }
 
-  private async handleCompletion(success: boolean): Promise<void> {
+  private async handleCompletion(
+    success: boolean,
+    taskId: string,
+    generation: number
+  ): Promise<void> {
+    if (!this.isCurrent(generation) || !this.isActive) return;
+    this.isActive = false;
+    this.clearTimers();
+    this.wsClient?.removeAllListeners();
+    this.wsClient?.disconnect();
+    if (!success) {
+      await this.handleError(new Error(`Task ${taskId} failed`), generation);
+      return;
+    }
     try {
-      if (success) {
-        const result = this.currentTaskId
-          ? await this.httpClient.get(`/v1/result/${this.currentTaskId}`)
-          : null;
-
-        await this.config.onComplete(result?.data || { success: true });
-        this.emit("complete", result?.data || { success: true });
-      }
+      const result = await this.httpClient.get(`/v1/result/${encodeURIComponent(taskId)}`);
+      if (!this.isCurrent(generation)) return;
+      await this.config.onComplete(result.data);
+      if (this.isCurrent(generation)) this.emit("complete", result.data);
     } catch (error) {
-      console.error("Error in completion callback:", error);
+      if (this.isCurrent(generation)) await this.handleError(error as Error, generation);
     } finally {
-      await this.stopTracking();
+      if (this.isCurrent(generation)) await this.stopTracking();
     }
   }
 
-  private async handleError(error: Error): Promise<void> {
+  private async handleError(error: Error, generation: number): Promise<void> {
+    if (!this.isCurrent(generation) || this.handlingError) return;
+    this.handlingError = true;
+    this.isActive = false;
+    this.clearTimers();
+    this.wsClient?.removeAllListeners();
+    this.wsClient?.disconnect();
     try {
       await this.config.onError(error);
-      this.emit("error", error);
     } catch (callbackError) {
       console.error("Error in error callback:", callbackError);
     } finally {
-      await this.stopTracking();
+      // Terminal settlement is independent of the optional observer's success.
+      try {
+        if (this.isCurrent(generation)) this.emit("error", error);
+      } finally {
+        if (this.isCurrent(generation)) await this.stopTracking();
+      }
     }
   }
 }

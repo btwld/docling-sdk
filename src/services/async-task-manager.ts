@@ -62,6 +62,8 @@ export interface TaskResult<T = unknown> {
 interface ActiveTask {
   startTime: number;
   options: Required<TaskOptions>;
+  completion: Promise<TaskResult>;
+  resolveCompletion: (result: TaskResult) => void;
   pollTimer?: ReturnType<typeof globalThis.setTimeout>;
   timeoutTimer?: ReturnType<typeof globalThis.setTimeout>;
 }
@@ -73,6 +75,9 @@ interface ActiveTask {
  */
 export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
   private activeTasks = new Map<string, ActiveTask>();
+  // Keep the most recent 1,000 terminal tasks, in completion order, for late waiters.
+  private completedTasks = new Map<string, Promise<TaskResult>>();
+  private destroyed = false;
   private http: HttpClient;
 
   constructor(http: HttpClient) {
@@ -89,26 +94,16 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
     parameters: Record<string, unknown>,
     options: TaskOptions = {}
   ): Promise<string> {
-    const taskOptions = this.normalizeOptions(options);
-
     try {
+      if (this.destroyed) throw new Error("Task manager destroyed");
+
       const response = await this.http.post<{ task_id: string }>(
         endpoint,
         JSON.stringify(parameters)
       );
 
       const taskId = response.data.task_id;
-
-      this.activeTasks.set(taskId, {
-        startTime: Date.now(),
-        options: taskOptions,
-      });
-
-      this.startPolling(taskId);
-      this.setTaskTimeout(taskId);
-
-      this.emit("status", { status: "pending", taskId });
-
+      this.trackTask(taskId, options);
       return taskId;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error));
@@ -121,105 +116,44 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
    * Start polling for an existing task
    */
   startPollingExistingTask(taskId: string, options: TaskOptions = {}): void {
-    const taskOptions = this.normalizeOptions(options);
-
-    if (!this.activeTasks.has(taskId)) {
-      this.activeTasks.set(taskId, {
-        startTime: Date.now(),
-        options: taskOptions,
-      });
-
-      this.startPolling(taskId);
-      this.setTaskTimeout(taskId);
-      this.emit("status", { status: "pending", taskId });
-    }
+    this.trackTask(taskId, options);
   }
 
   /**
-   * Wait for task completion
-   * Returns a Promise that resolves when task completes
+   * Wait for a tracked task, including one that has already completed.
+   * Results are retained for the latest 1,000 completions. Unknown or evicted IDs
+   * resolve immediately with a "Task not found" failure; they do not start polling.
    */
   async waitForCompletion<T = unknown>(taskId: string): Promise<TaskResult<T>> {
-    return new Promise((resolve) => {
-      const handleCompletion = (event: TaskEvents["success"]) => {
-        if (event.taskId !== taskId) return;
-
-        const task = this.activeTasks.get(taskId);
-        if (!task) {
-          resolve({
-            success: false,
-            error: { message: "Task not found" },
-            taskId,
-            finalStatus: "failure",
-            duration: 0,
-          });
-          return;
-        }
-
-        const duration = Date.now() - task.startTime;
-        this.cleanup(taskId);
-
-        resolve({
-          success: true,
-          taskId,
-          finalStatus: "success",
-          duration,
-        });
-      };
-
-      const handleFailure = (event: TaskEvents["failure"]) => {
-        if (event.taskId !== taskId) return;
-
-        const task = this.activeTasks.get(taskId);
-        const duration = task ? Date.now() - task.startTime : 0;
-        this.cleanup(taskId);
-
-        resolve({
+    const completion = this.activeTasks.get(taskId)?.completion ?? this.completedTasks.get(taskId);
+    return completion
+      ? (completion as Promise<TaskResult<T>>)
+      : {
           success: false,
-          error: { message: event.error },
+          error: { message: "Task not found" },
           taskId,
           finalStatus: "failure",
-          duration,
-        });
-      };
+          duration: 0,
+        };
+  }
 
-      const handleTimeout = (event: TaskEvents["timeout"]) => {
-        if (event.taskId !== taskId) return;
-
-        const task = this.activeTasks.get(taskId);
-        const duration = task ? Date.now() - task.startTime : 0;
-        this.cleanup(taskId);
-
-        resolve({
-          success: false,
-          error: { message: "Task timeout" },
-          taskId,
-          finalStatus: "failure",
-          duration,
-        });
-      };
-
-      const handleError = (event: TaskEvents["error"]) => {
-        if (event.taskId !== taskId) return;
-
-        const task = this.activeTasks.get(taskId);
-        const duration = task ? Date.now() - task.startTime : 0;
-        this.cleanup(taskId);
-
-        resolve({
-          success: false,
-          error: { message: event.error.message, details: event.error },
-          taskId,
-          finalStatus: "failure",
-          duration,
-        });
-      };
-
-      this.once("success", handleCompletion);
-      this.once("failure", handleFailure);
-      this.once("timeout", handleTimeout);
-      this.once("error", handleError);
-    });
+  /** Settle terminal state before notifying observers, independently of waiters. */
+  override emit<K extends keyof TaskEvents>(type: K, event: TaskEvents[K]): this {
+    if (type === "success") {
+      this.completeTask((event as TaskEvents["success"]).taskId);
+    } else if (type === "failure") {
+      const failure = event as TaskEvents["failure"];
+      this.completeTask(failure.taskId, { message: failure.error });
+    } else if (type === "timeout") {
+      this.completeTask((event as TaskEvents["timeout"]).taskId, { message: "Task timeout" });
+    } else if (type === "error") {
+      const failure = event as TaskEvents["error"];
+      this.completeTask(failure.taskId, {
+        message: failure.error.message,
+        details: failure.error,
+      });
+    }
+    return super.emit(type, event);
   }
 
   /**
@@ -234,7 +168,6 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
    * Cancel a task
    */
   async cancelTask(taskId: string): Promise<void> {
-    this.cleanup(taskId);
     this.emit("failure", { error: "Task cancelled", taskId });
   }
 
@@ -263,24 +196,66 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
    * Clean up all tasks (for shutdown)
    */
   destroy(): void {
+    this.destroyed = true;
     for (const taskId of this.activeTasks.keys()) {
-      this.cleanup(taskId);
+      this.completeTask(taskId, { message: "Task manager destroyed" });
     }
     this.removeAllListeners();
   }
 
   // Private methods
 
+  private trackTask(taskId: string, options: TaskOptions): void {
+    if (this.destroyed) throw new Error("Task manager destroyed");
+    if (!taskId || typeof taskId !== "string")
+      throw new Error("Invalid task response: missing task_id");
+    if (this.activeTasks.has(taskId) || this.completedTasks.has(taskId)) return;
+
+    let resolveCompletion!: ActiveTask["resolveCompletion"];
+    const completion = new Promise<TaskResult>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    this.activeTasks.set(taskId, {
+      startTime: Date.now(),
+      options: this.normalizeOptions(options),
+      completion,
+      resolveCompletion,
+    });
+    this.startPolling(taskId);
+    this.setTaskTimeout(taskId);
+    this.emit("status", { status: "pending", taskId });
+  }
+
+  private completeTask(taskId: string, error?: TaskResult["error"]): void {
+    const task = this.activeTasks.get(taskId);
+    if (!task) return;
+
+    const result: TaskResult = {
+      success: !error,
+      ...(error && { error }),
+      taskId,
+      finalStatus: error ? "failure" : "success",
+      duration: Date.now() - task.startTime,
+    };
+    this.cleanup(taskId);
+    this.completedTasks.set(taskId, task.completion);
+    if (this.completedTasks.size > 1000) {
+      const oldest = this.completedTasks.keys().next().value;
+      if (oldest !== undefined) this.completedTasks.delete(oldest);
+    }
+    task.resolveCompletion(result);
+  }
+
   /**
    * Normalize task options with defaults
    */
   private normalizeOptions(options: TaskOptions): Required<TaskOptions> {
     return {
-      timeout: options.timeout || 300000,
-      pollInterval: options.pollInterval || 2000,
-      maxPolls: options.maxPolls || 150,
-      waitSeconds: options.waitSeconds || 100,
-      pollingRetries: options.pollingRetries || 5,
+      timeout: options.timeout ?? 300000,
+      pollInterval: options.pollInterval ?? 2000,
+      maxPolls: options.maxPolls ?? 150,
+      waitSeconds: options.waitSeconds ?? 100,
+      pollingRetries: options.pollingRetries ?? 5,
     };
   }
 
@@ -295,6 +270,8 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
     let consecutiveFailures = 0;
 
     const poll = async () => {
+      if (this.activeTasks.get(taskId) !== task) return;
+
       try {
         pollCount++;
 
@@ -311,11 +288,15 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
           `/v1/status/poll/${taskId}?wait=${waitSeconds}`
         );
 
+        // Cancellation, timeout, or destruction may have happened during the request.
+        if (this.activeTasks.get(taskId) !== task) return;
+
         // Reset failure counter on successful request
         consecutiveFailures = 0;
 
         const status = response.data.task_status;
         this.emit("status", { status, taskId });
+        if (this.activeTasks.get(taskId) !== task) return;
 
         if (status === "success") {
           this.emit("success", { taskId });
@@ -329,10 +310,16 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
 
         const requestDuration = Date.now() - requestStart;
         const delay =
-          requestDuration < 5000 ? Math.min(task.options.pollInterval, waitSeconds * 1000) : 1000; // Minimal delay if server did proper long polling
+          requestDuration < 5000
+            ? waitSeconds > 0
+              ? Math.min(task.options.pollInterval, waitSeconds * 1000)
+              : task.options.pollInterval
+            : 1000; // Minimal delay if server did proper long polling
 
         task.pollTimer = globalThis.setTimeout(poll, delay);
       } catch (error) {
+        if (this.activeTasks.get(taskId) !== task) return;
+
         consecutiveFailures++;
         const maxRetries = task.options.pollingRetries;
 
@@ -369,6 +356,7 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
     if (!task) return;
 
     task.timeoutTimer = globalThis.setTimeout(() => {
+      if (this.activeTasks.get(taskId) !== task) return;
       this.emit("timeout", { taskId });
     }, task.options.timeout);
   }
@@ -380,11 +368,11 @@ export class AsyncTaskManager extends CrossEventEmitter<TaskEvents> {
     const task = this.activeTasks.get(taskId);
     if (!task) return;
 
-    if (task.pollTimer) {
+    if (task.pollTimer !== undefined) {
       globalThis.clearTimeout(task.pollTimer);
     }
 
-    if (task.timeoutTimer) {
+    if (task.timeoutTimer !== undefined) {
       globalThis.clearTimeout(task.timeoutTimer);
     }
 

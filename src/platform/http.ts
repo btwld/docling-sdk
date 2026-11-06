@@ -3,10 +3,11 @@
  * Provides a unified HTTP interface for all runtime environments
  */
 
-import { $fetch, type FetchError, type FetchOptions, ofetch } from "ofetch";
-import { type BinaryData, binaryToBlob, uint8ArrayToString } from "./binary";
+import { type $fetch, type FetchError, type FetchOptions, ofetch } from "ofetch";
+import { type BinaryData, binaryToBlob } from "./binary";
 import type {
   ExtendedHttpOptions,
+  FetchContext,
   FileUploadInfo,
   HttpClientConfig,
   HttpResponse,
@@ -17,6 +18,10 @@ import type {
  * Default retry status codes
  */
 const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+
+// Error bodies are optional diagnostics, including after ofetch has cleared its header timeout.
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+const MAX_ERROR_BODY_TIME_MS = 1000;
 
 /**
  * Cross-runtime HTTP client
@@ -43,7 +48,6 @@ export class PlatformHttpClient {
     this.fetcher = ofetch.create({
       baseURL: this.config.baseUrl,
       timeout: this.config.timeout,
-      headers: this.config.headers,
       retry: this.config.retry,
       retryDelay: this.config.retryDelay,
       retryStatusCodes: this.config.retryStatusCodes,
@@ -57,15 +61,13 @@ export class PlatformHttpClient {
     endpoint: string,
     options: ExtendedHttpOptions = {}
   ): Promise<HttpResponse<T>> {
-    const url = endpoint.startsWith("http") ? endpoint : endpoint;
+    const requestHeaders = new Headers(this.config.headers);
+    new Headers(options.headers).forEach((value, key) => requestHeaders.set(key, value));
 
     // biome-ignore lint/suspicious/noExplicitAny: ofetch interceptors have complex generic types
     const fetchOptions: FetchOptions<any> = {
       method: options.method ?? "GET",
-      headers: {
-        ...this.config.headers,
-        ...options.headers,
-      },
+      headers: requestHeaders,
       timeout: options.timeout ?? this.config.timeout,
       retry: options.retry ?? this.config.retry,
       retryDelay: options.retryDelay ?? this.config.retryDelay,
@@ -73,7 +75,9 @@ export class PlatformHttpClient {
       signal: options.signal,
       query: options.query,
       parseResponse:
-        options.responseType === "binary" || options.responseType === "stream"
+        options.responseType === "binary" ||
+        options.responseType === "stream" ||
+        options.responseType === "text"
           ? undefined
           : options.parseResponse !== false
             ? JSON.parse
@@ -83,7 +87,16 @@ export class PlatformHttpClient {
       onRequest: options.onRequest as FetchOptions["onRequest"],
       onResponse: options.onResponse as FetchOptions["onResponse"],
       onRequestError: options.onRequestError as FetchOptions["onRequestError"],
-      onResponseError: options.onResponseError as FetchOptions["onResponseError"],
+      onResponseError: async (context) => {
+        // Consume/cancel each failed attempt, including responses that ofetch will retry.
+        if (context.response._data instanceof ReadableStream) {
+          context.response._data = await this.readErrorDiagnostics(
+            context.response._data,
+            options.timeout ?? this.config.timeout
+          );
+        }
+        await options.onResponseError?.(context as unknown as FetchContext);
+      },
     };
 
     // Handle body
@@ -91,9 +104,7 @@ export class PlatformHttpClient {
       if (options.body instanceof FormData) {
         fetchOptions.body = options.body;
         // Remove Content-Type so the runtime auto-generates the multipart boundary
-        const headers = fetchOptions.headers as Record<string, unknown>;
-        // biome-ignore lint/performance/noDelete: Setting to undefined causes ofetch to send literal "Content-Type: undefined" - must use delete
-        delete headers["Content-Type"];
+        requestHeaders.delete("Content-Type");
       } else if (options.body instanceof ReadableStream) {
         fetchOptions.body = options.body;
       } else if (typeof options.body === "string") {
@@ -103,7 +114,7 @@ export class PlatformHttpClient {
       } else {
         // Object - serialize to JSON
         fetchOptions.body = JSON.stringify(options.body);
-        (fetchOptions.headers as Record<string, string>)["Content-Type"] = "application/json";
+        requestHeaders.set("Content-Type", "application/json");
       }
     }
 
@@ -118,7 +129,7 @@ export class PlatformHttpClient {
 
     try {
       // biome-ignore lint/suspicious/noExplicitAny: ofetch has complex response type generics
-      const response = await this.fetcher.raw<T>(url, fetchOptions as FetchOptions<any>);
+      const response = await this.fetcher.raw<T>(endpoint, fetchOptions as FetchOptions<any>);
 
       // Parse response headers
       const headers: Record<string, string> = {};
@@ -142,7 +153,7 @@ export class PlatformHttpClient {
         _raw: response,
       };
     } catch (error) {
-      throw this.normalizeError(error);
+      throw await this.normalizeError(error, options.timeout ?? this.config.timeout);
     }
   }
 
@@ -276,7 +287,7 @@ export class PlatformHttpClient {
           formData.append(key, String(item));
         }
       } else if (value !== undefined && value !== null) {
-        formData.append(key, String(value));
+        formData.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
       }
     }
 
@@ -344,7 +355,7 @@ export class PlatformHttpClient {
           formData.append(key, String(item));
         }
       } else if (value !== undefined && value !== null) {
-        formData.append(key, String(value));
+        formData.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
       }
     }
 
@@ -441,21 +452,11 @@ export class PlatformHttpClient {
     statusText: string;
     headers: Record<string, string>;
   }> {
-    const response = await this.fetcher.raw(endpoint, {
-      method: options.method ?? "GET",
-      headers: {
-        ...this.config.headers,
-        ...options.headers,
-      },
-      timeout: options.timeout ?? this.config.timeout,
-      signal: options.signal,
+    const response = await this.request<ReadableStream<Uint8Array>>(endpoint, {
+      ...options,
       responseType: "stream",
     });
-
-    const headers: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
+    const { headers } = response;
 
     const contentType = headers["content-type"] ?? "";
     const contentDisposition = headers["content-disposition"] ?? "";
@@ -477,7 +478,7 @@ export class PlatformHttpClient {
       contentType.includes("application/octet-stream")
     ) {
       return {
-        fileStream: response.body ?? undefined,
+        fileStream: response.data ?? undefined,
         fileMetadata,
         status: response.status,
         statusText: response.statusText,
@@ -485,33 +486,12 @@ export class PlatformHttpClient {
       };
     }
 
-    // Otherwise return data
+    const text = response.data ? await new Response(response.data).text() : "";
     let data: T;
-    if (response.body) {
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-
-      const combined = new Uint8Array(chunks.reduce((sum, c) => sum + c.length, 0));
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      const text = uint8ArrayToString(combined);
-      try {
-        data = JSON.parse(text) as T;
-      } catch {
-        data = text as unknown as T;
-      }
-    } else {
-      data = response._data as T;
+    try {
+      data = JSON.parse(text) as T;
+    } catch {
+      data = text as T;
     }
 
     return {
@@ -536,7 +516,6 @@ export class PlatformHttpClient {
     this.fetcher = ofetch.create({
       baseURL: this.config.baseUrl,
       timeout: this.config.timeout,
-      headers: this.config.headers,
       retry: this.config.retry,
       retryDelay: this.config.retryDelay,
       retryStatusCodes: this.config.retryStatusCodes,
@@ -553,21 +532,83 @@ export class PlatformHttpClient {
   /**
    * Normalize errors to a consistent format
    */
-  private normalizeError(error: unknown): Error {
+  private async normalizeError(error: unknown, timeout: number): Promise<Error> {
     if (error instanceof Error) {
       // Handle ofetch FetchError
       const fetchError = error as FetchError;
       if (fetchError.data || fetchError.statusCode) {
-        const message = this.extractErrorMessage(fetchError.data) ?? fetchError.message;
+        let data: unknown = fetchError.data;
+        if (data instanceof ReadableStream) data = await this.readErrorDiagnostics(data, timeout);
+        if (data instanceof ArrayBuffer) data = new TextDecoder().decode(data);
+        if (typeof data === "string") {
+          try {
+            data = JSON.parse(data);
+          } catch {
+            /* Preserve plain-text diagnostics. */
+          }
+        }
+        const message = this.extractErrorMessage(data) ?? fetchError.message;
         const normalizedError = new Error(message);
         (normalizedError as Error & { statusCode?: number }).statusCode = fetchError.statusCode;
-        (normalizedError as Error & { data?: unknown }).data = fetchError.data;
+        (normalizedError as Error & { data?: unknown }).data = data;
         return normalizedError;
       }
       return error;
     }
 
     return new Error(String(error));
+  }
+
+  private async readErrorDiagnostics(
+    stream: ReadableStream<Uint8Array>,
+    timeout: number
+  ): Promise<string | undefined> {
+    const budget = Math.min(
+      MAX_ERROR_BODY_TIME_MS,
+      Number.isFinite(timeout) && timeout > 0 ? timeout : MAX_ERROR_BODY_TIME_MS
+    );
+    const deadline = Date.now() + budget;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    let complete = false;
+    try {
+      reader = stream.getReader();
+      const bodyReader = reader;
+      const consume = async () => {
+        const bytes = new Uint8Array(MAX_ERROR_BODY_BYTES);
+        let size = 0;
+        while (Date.now() < deadline) {
+          const { done, value } = await bodyReader.read();
+          if (done) {
+            complete = true;
+            return new TextDecoder().decode(bytes.subarray(0, size));
+          }
+          if (value.byteLength > MAX_ERROR_BODY_BYTES - size) return undefined;
+          bytes.set(value, size);
+          size += value.byteLength;
+        }
+        return undefined;
+      };
+      return await Promise.race([
+        consume(),
+        new Promise<undefined>((resolve) => {
+          timer = globalThis.setTimeout(() => resolve(undefined), budget);
+        }),
+      ]);
+    } catch {
+      // A failed diagnostic read must preserve the HTTP status and original error message.
+      return undefined;
+    } finally {
+      if (timer !== undefined) globalThis.clearTimeout(timer);
+      if (reader) {
+        // Cancellation itself can stall or reject; it must never delay the HTTP error.
+        if (!complete)
+          void reader.cancel().catch(() => {
+            // Diagnostic cancellation cannot replace the original HTTP error.
+          });
+        reader.releaseLock();
+      }
+    }
   }
 
   /**
@@ -612,6 +653,3 @@ export class PlatformHttpClient {
 export function createHttpClient(config: HttpClientConfig): PlatformHttpClient {
   return new PlatformHttpClient(config);
 }
-
-// Re-export ofetch for advanced usage
-export { $fetch, ofetch, type FetchOptions, type FetchError };

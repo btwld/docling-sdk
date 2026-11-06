@@ -14,6 +14,7 @@ const mockConfig: ApiClientConfig = {
 vi.mock("../../src/services/async-task-manager", () => {
   return {
     AsyncTaskManager: class {
+      startPollingExistingTask = vi.fn();
       async submitTask() {
         return "task-123";
       }
