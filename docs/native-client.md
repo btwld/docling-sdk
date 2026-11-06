@@ -118,6 +118,7 @@ render Markdown/HTML with the application's normal content-sanitization policy.
 Other options reject. Output inventory is limited to 256 files and 128 MiB;
 Office ZIP expansion to 256 MiB/10,000 entries, XML parts to 16 MiB. ZIP64,
 encrypted archives and externally fetched Office relationships are unsupported.
+PPTX requires at least one valid slide; zero-slide packages reject before launch.
 Ordinary hyperlinks are preserved but never followed by the SDK. Input/file
 references, ZIP members and emitted assets are validated for ownership and
 unsupported links; malformed data cannot select another document's output.

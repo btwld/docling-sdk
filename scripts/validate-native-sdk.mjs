@@ -1056,36 +1056,36 @@ async function consumer(configPath) {
       ensure(JSON.stringify(result.coverage.requested) === "[2,2]", "requested-range-receipt");
       return details;
     });
-    for (const name of ["empty.docx", "empty.pptx"])
-      await test(`real-${name}`, async () => {
-        const result = await client.convertFile(input(name), {
-          outputDirectory: outputRoot(name),
-          timeoutMs: 30_000,
-        });
-        ensure(
-          ["success", "partial_success", "failure"].includes(result.status),
-          "empty-office-status"
-        );
-        if (result.status === "failure") {
-          ensure(!result.outputDirectory && result.files.length === 0, "empty-failure-unpublished");
-          await emptyOutput(name);
-        } else {
-          await validateResult(result, name, { status: result.status }, name);
-          ensure(
-            result.document.texts.length === 0 &&
-              result.document.tables.length === 0 &&
-              result.document.pictures.length === 0,
-            "empty-office-stays-empty"
-          );
-          if (name.endsWith("pptx"))
-            ensure(result.coverage.complete !== true, "zero-slide-coverage-not-complete");
-        }
-        return {
-          status: result.status,
-          coverage: result.coverage,
-          published: !!result.outputDirectory,
-        };
+    await test("real-empty.docx", async () => {
+      const name = "empty.docx";
+      const result = await client.convertFile(input(name), {
+        outputDirectory: outputRoot(name),
+        timeoutMs: 30_000,
       });
+      await validateResult(result, name, { status: "success" }, name);
+      ensure(
+        result.document.texts.length === 0 &&
+          result.document.tables.length === 0 &&
+          result.document.pictures.length === 0,
+        "empty-office-stays-empty"
+      );
+      return { status: result.status, coverage: result.coverage, published: true };
+    });
+    await test("reject-zero-slide-pptx-before-launch", async () => {
+      // A package with no slide list is outside the supported PPTX contract.
+      // Its rejection must not be confused with an engine-conversion failure.
+      const index = launches.length;
+      const details = await expectError(
+        () => client.convertFile(input("empty.pptx"), {
+          outputDirectory: outputRoot("empty.pptx"),
+          timeoutMs: 30_000,
+        }),
+        "INVALID_INPUT"
+      );
+      ensure(launches.length === index, "zero-slide-pptx-launched-no-process");
+      await emptyOutput("empty.pptx");
+      return { ...details, rejectedBeforeLaunch: true, published: false };
+    });
     for (const name of ["corrupt.pdf", "corrupt.docx", "corrupt.pptx"])
       await test(`reject-${name}`, async () => {
         if (name.endsWith("pdf")) {
