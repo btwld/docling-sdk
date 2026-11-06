@@ -28,6 +28,8 @@ npm install @btwld/docling-sdk
 
 The release workflow also publishes the scoped package to GitHub Packages.
 The package uses ESM imports.
+TypeScript consumers need TypeScript >=5.5. Repository development uses Node
+20.19+ (or 22.12+); the published SDK still supports Node >=18.
 
 ### Peer dependencies
 

@@ -21,6 +21,13 @@ const webClient = new Docling({ web: { device: "webgpu" } });
 
 ## API Configuration
 
+The checked-in raw schema and live integration fixture use Serve **1.7.2**.
+Advanced object options such as `ocr_options`, `accelerator_options`, and
+`layout_options` are passed through for servers supporting them, but are not
+declared by that pinned server. Do not assume they take effect on Serve 1.7.2;
+use its documented scalar options (for example `ocr_lang` and `force_ocr`) and
+verify the deployed server's schema. SDK option types are not server negotiation.
+
 ```typescript
 const client = new Docling({
   api: {
@@ -42,8 +49,15 @@ const client = new Docling({
 | `baseUrl` | `string` | -- | Docling Serve URL (required) |
 | `apiKey` | `string` | -- | API key, sent as `X-Api-Key` header |
 | `timeout` | `number` | `60000` | Request timeout in milliseconds |
-| `retries` | `number` | `3` | Number of retry attempts on failure |
+| `retries` | `number` | `3` | Number of retry attempts on failure; `0` disables retries |
 | `headers` | `Record<string, string>` | -- | Additional HTTP headers |
+
+For a `DoclingAPIClient`, `updateConfig({ apiKey: "replacement-key" })` updates
+authentication without another transport setting changing. Passing `apiKey: ""`
+or an explicit `apiKey: undefined` removes the generated `X-Api-Key` header.
+Custom headers still take precedence; clear a custom `X-Api-Key` separately if
+one was supplied. Transport reconfiguration replaces services and settles their
+pending local task waiters; it does not cancel server-side work.
 
 ### Convenience factory
 

@@ -17,7 +17,7 @@ Integration tests need external services; file presence is not coverage.
 - Keep Node-only CLI imports out of `src/browser-entry.ts` and Web paths.
 - Check `package.json` exports when changing public symbols or entry points.
 - `src/types/api.ts` is the manual SDK contract; check schemas and adapters too.
-- OpenAPI types contain placeholders; do not claim endpoint coverage.
+- OpenAPI types come from a pinned Serve schema; raw types do not imply SDK feature parity.
 - Regenerate generated types rather than hand-editing generated output.
 - Conversion, file-output and Web capabilities differ; check the concrete client.
 

@@ -35,9 +35,10 @@ console.log(result.document.md_content);
 ```
 
 Node supports file paths and Node streams on the methods that expose them, and
-uses optional `ws` for WebSocket progress. HTTP uses the platform fetch client;
-the old SDK `ConnectionPool` class is deprecated and is no longer wired into
-requests or exported as a public pool configuration API.
+uses optional `ws` for WebSocket progress. HTTP uses the platform fetch client.
+The unused, unexported `ConnectionPool` implementation has been removed.
+ZIP output loads optional `fflate` only when requested; HTTP/browser consumers
+can install with `--omit=optional` without loading a ZIP implementation.
 
 ## Bun and Deno
 
@@ -55,19 +56,17 @@ const result = await client.convert(input, "document.pdf", { to_formats: ["md"] 
 console.log(result.document.md_content);
 ```
 
-Deno requires `--allow-net`, `--allow-read` and `--allow-env` for this example.
-The main entry eagerly loads the CLI client and `archiver` at import time, even
-when only `createAPIClient` is used. That dependency chain reads environment
-variables (including `GRACEFUL_FS_PLATFORM`), so importing without `--allow-env`
-fails on Deno 2.9.6 before any API request. Environment-based S3 credentials also
-need env access; saving output needs `--allow-write`.
+Deno requires permissions for the capabilities used by the consumer. The main
+entry includes Node-compatible CLI code, but no longer eagerly imports the ZIP
+library. Environment-based S3 credentials need env access; saving output needs
+write access. Bun/Deno examples are not a substitute for a runtime compatibility
+pass on the versions your application uses.
 
 For API `convertToFile`, check `success`, then inspect whether `fileStream` or
-`data` is present. The byte fallback runs only when the SDK's internal `isNode()`
-returns false. On Deno 2.9.6, both `isNode()` and `isDeno()` return true, so a
-successful ZIP conversion returns a Node-compatible `fileStream`, without `data`.
-Consume that stream or collect its chunks if you need bytes. Async download
-methods do not provide the byte fallback; see
+`data` is present. Runtime detection distinguishes Deno/Bun from Node, so those
+runtimes use the `data` byte fallback rather than incidental Node-compatible
+streams. Browser ZIP
+downloads return `data` bytes, including async file downloads; see
 [transfer behavior](streaming.md#method-behavior).
 
 ## Browser API conversion
@@ -100,7 +99,9 @@ for peer dependencies, initialization, model download and cleanup. Web OCR
 accepts images and rendered PDF pages, not the API client's full Office/HTML
 input-format set.
 
-Provide a bundler-resolved worker URL when needed. For example, in Vite:
+Provide a bundler-resolved worker URL. The legacy default blob loader contains
+a bare package import, which ordinary browsers cannot resolve without a matching
+module-resolution setup. For example, in Vite:
 
 ```typescript
 import { createWebClient } from "docling-sdk/web";
@@ -123,7 +124,9 @@ stream methods require capabilities that ordinary edge runtimes do not provide.
 Use HTTP progress polling when the runtime cannot provide the required outgoing
 WebSocket implementation.
 
-CI currently runs Node 20; it does not exercise a browser/Bun/Deno/edge matrix.
+CI runs unit/coverage/build checks on Node 20, 22 and 24, and packed consumers on
+Linux, macOS and Windows with Node 18 and 24. The consumer check includes browser
+bundling, not real model inference or a Bun/Deno/edge matrix.
 The [runtime examples](examples.md#runtime-examples) provide starting points for
 checking the paths your application uses.
 

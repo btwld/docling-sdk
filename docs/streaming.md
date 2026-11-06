@@ -12,14 +12,13 @@ has several transfer paths with different buffering and runtime requirements.
 | `convertToStream` (default content mode) | Bytes → writable | Receives the JSON conversion response before writing content; the result can be buffered |
 | `convertToFile` | Bytes → ZIP result | Buffers the ZIP; returns `fileStream` (a Node readable) when the SDK's internal `isNode()` is true, otherwise `data: Uint8Array` |
 | `convertStream` | Node readable → document | Accepts a Node input stream; the multipart encoder collects input chunks before upload |
-| `convertStreamToFile` | Node readable → ZIP result | Buffers multipart input, submits asynchronously and returns a Node download stream after completion; no portable byte fallback |
-| `getTaskResultFile` | Task ID → ZIP result | Uses the Node download-stream path; no portable byte fallback |
+| `convertStreamToFile` | Node readable → ZIP result | Buffers multipart input, submits asynchronously and returns a download stream after completion |
+| `getTaskResultFile` | Task ID → ZIP result | Returns a Node readable in Node, or collected `Uint8Array` bytes outside Node |
 
 For API `convertToFile`, check `success`, then inspect the returned payload field.
-The runtime checks can overlap: on Deno 2.9.6, both `isNode()` and `isDeno()` return
-true, so this method returns `fileStream`, without `data`. The byte fallback is
-selected by `!isNode()`, not by the runtime's name. Async file-output methods do
-not offer this fallback. Web OCR does not support `convertToFile` or
+Runtime detection distinguishes Deno and Bun from Node; those runtimes return
+`data` bytes. Async file-output methods
+also preserve browser download bytes. Web OCR does not support `convertToFile` or
 `safeConvertToFile`.
 
 ## Write converted content (Node)
@@ -60,6 +59,9 @@ await pipeline(result.fileStream, createWriteStream("result.zip"));
 ```
 
 The download can stream, but the input is collected for multipart upload first.
+For tasks submitted with a ZIP target, use `getTaskResultFile(task.taskId)` after
+completion. The legacy task wrapper's `getResult()` is a JSON document reader,
+not a ZIP reader; it does not change return type according to the output target.
 
 ## ConversionFileResult
 
@@ -69,8 +71,8 @@ successful result has `fileStream` (a Node readable) or `data` (bytes), plus
 `error`. Always check the payload field expected from the selected method.
 
 When `data` is present, save those bytes using `Bun.write`, `Deno.writeFile`, or a
-browser `Blob` download as appropriate. When `fileStream` is present (including
-on Deno 2.9.6), use a compatible Node stream destination or collect its byte chunks
+browser `Blob` download as appropriate. When `fileStream` is present,
+use a compatible Node stream destination or collect its byte chunks
 before passing bytes to a runtime file API. Deno file output requires
 `--allow-write` in addition to permissions needed for conversion.
 

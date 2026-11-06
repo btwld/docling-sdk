@@ -9,6 +9,33 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run openapi:check
+      - run: npm audit
+      - run: npm run test:coverage
+      - run: npm run build
+
+  packed-consumers:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        runtime: [18, 24]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
@@ -16,8 +43,9 @@ jobs:
           node-version: 20
           cache: 'npm'
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
       - run: npm run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.runtime }}
+      - run: npm run validate:package
 

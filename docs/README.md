@@ -4,6 +4,9 @@
 
 [Core concepts](../README.md#core-concepts) · [Architecture decisions](../ARCHITECTURE.md)
 
+[Proposed native conversion design and correctness review](native-document-conversion-review.md)
+records the local-backend findings, evidence and implementation gates.
+
 ## Guides
 
 | Guide | Description |

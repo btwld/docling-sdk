@@ -1,0 +1,7 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts", "src/browser-entry.ts", "src/web-entry.ts", "src/cli-entry.ts"],
+  "out": "build/api-docs",
+  "tsconfig": "tsconfig.json",
+  "excludeInternal": true
+}

@@ -85,12 +85,19 @@ jobs:
       - name: Build packages
         run: npm run build
 
+      - name: Verify types, lint, schema and dependencies
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run openapi:check
+          npm audit
+
       - name: Run tests
-        run: npm test
+        run: npm run test:coverage
         timeout-minutes: 10
 
-      - name: Verify package can be packed
-        run: npm pack --dry-run
+      - name: Verify packed consumers
+        run: npm run validate:package
 
   # Release job - only runs if validation passes and changes detected
   release:

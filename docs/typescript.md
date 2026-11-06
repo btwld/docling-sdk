@@ -40,24 +40,32 @@ for callers implementing their own wrappers.
 
 ## OpenAPI types and adapters
 
-The type-only `OpenAPI` namespace is exported, but
-`src/types/generated/api.ts` currently contains placeholder `paths`, `components`
-and `operations`, not generated endpoint definitions. Endpoint-indexing examples
-will not work until that scaffold is populated. Handwritten types remain the
-SDK's primary contract.
+The type-only `OpenAPI` namespace contains real endpoint definitions generated
+from the pinned **Docling Serve 1.7.2** schema. Handwritten types remain the SDK's
+primary contract; raw server types do not imply every endpoint or option is
+implemented by every client.
 
-To generate types against a running Docling Serve instance:
+```typescript
+import type { OpenAPI } from "docling-sdk";
 
-```bash
-npm run openapi:fetch
-npm run openapi:generate
+type ConvertEndpoint = OpenAPI.paths["/v1/convert/source"]["post"];
+type TaskStatus = OpenAPI.components["schemas"]["TaskStatusResponse"];
 ```
 
-`DOCLING_URL` or `openapi:fetch -- --url URL` selects a different server. Confirm
-that fetching created `openapi/docling-serve.json` before generating: the fetcher
-also accepts YAML, while the generation script reads only the JSON path. Do not
-hand-edit generated output. Keep handwritten types, runtime schemas and adapters
-consistent when changing the SDK contract.
+Regenerate and verify from the checked-in schema without a running server:
+
+```bash
+npm run openapi:generate
+npm run openapi:check
+```
+
+`DOCLING_URL` or `openapi:fetch -- --url URL` selects a server for a candidate
+update. Fetching accepts only OpenAPI JSON with the pinned Serve version;
+generation verifies its reviewed digest. See the [schema provenance and update
+procedure](../openapi/README.md). Do not hand-edit generated output. Keep
+handwritten types, runtime schemas and adapters consistent when changing the SDK
+contract. Runtime validators accept the declared camel-case CLI options as well
+as previously accepted legacy snake-case fields.
 
 S3 adapters translate the SDK's convenience fields into server request fields;
 see [S3 Integration](s3-integration.md). The

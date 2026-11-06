@@ -48,11 +48,12 @@ Date: 2026-02-09 · Observed active · Rationale reconstructed 2026-10-30
 Keep handwritten SDK types as the public contract and translate convenience
 configuration at the server boundary to decouple callers from the upstream
 schema. This costs synchronization across types, validators and adapters; the
-exported OpenAPI namespace still contains placeholders. S3 follows this boundary,
+exported OpenAPI namespace originally contained placeholders (superseded by
+[pinned raw types](#pinned-raw-server-types)). S3 follows this boundary,
 with storage access delegated to the server and field limits documented in the
 [S3 guide](docs/s3-integration.md).
 
-Evidence: [SDK types](src/types/api.ts), [placeholder](src/types/generated/api.ts),
+Evidence: [SDK types](src/types/api.ts), [raw types](src/types/generated/api.ts),
 [S3 adapters](src/types/adapters/s3.ts), [type workflow](docs/typescript.md).
 
 ## Conversion and error contracts
@@ -69,14 +70,14 @@ Evidence: [PR #35](https://github.com/btwld/docling-sdk/pull/35),
 
 ## Async lifecycle and fallback
 
-Date: 2026-10-30 · Observed active · Reconstructed
+Date: 2026-10-30 · Observed active · Reconstructed; task cleanup corrected 2026-11-03
 
 Track server task completion separately from progress delivery so completion
 does not depend on WebSocket updates; hybrid progress falls back to HTTP on
 WebSocket errors or an initial timeout without progress.
 Separate service managers and progress trackers own polling/timers; API
-`client.destroy()` clears the file manager, while the chunk manager needs explicit
-`client.chunks.getTaskManager().destroy()` because `ChunkService.destroy()` is empty.
+`client.destroy()` now clears both file and chunk task managers, settles waiters
+and prevents late poll responses from restarting their timers.
 Caller-owned progress trackers need `stopTracking()`, and application webhook
 delivery belongs to the caller.
 
@@ -136,4 +137,17 @@ Date: 2026-02-09 · Superseded by [runtime boundaries](#runtime-boundaries)
 The earlier custom Node connection pool managed socket reuse but tied transport
 to Node. [PR #60](https://github.com/btwld/docling-sdk/pull/60) replaced it with
 fetch-based transport for portability, retiring the pool's configuration API;
-the [retained source](src/api/index.ts) is deprecated.
+the [transport exports](src/api/index.ts) no longer expose a custom pool. Its
+unused, unexported implementation was removed during 2026-11-06 hardening.
+
+## Pinned raw server types
+
+Date: 2026-11-06 · Implemented locally
+
+Generate the raw OpenAPI namespace from the checked-in Serve 1.7.2 schema, with
+source/version provenance and digest/staleness checks. This removes the empty
+placeholder without replacing the handwritten SDK contract; upgrades require a
+reviewed schema change and do not imply client feature parity.
+
+Evidence: [schema provenance](openapi/schema-provenance.json),
+[regeneration](scripts/generate-openapi.mjs), [type guide](docs/typescript.md).

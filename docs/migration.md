@@ -58,12 +58,29 @@ These are not new v2 migrations:
   Use `safeConvert` when a Result wrapper is preferable to catching errors.
 - `DocumentContent` remains exported as a deprecated interface. Prefer
   `ExportDocumentResponse` for new type annotations.
-- Chunking, S3 and Result utilities existed before v2. The OpenAPI namespace
-  remains a placeholder rather than populated endpoint types.
+- Chunking, S3 and Result utilities existed before v2. The previously empty
+  OpenAPI namespace now contains raw types from a pinned Serve 1.7.2 schema;
+  see [TypeScript](typescript.md#openapi-types-and-adapters).
 
 File-output methods have their own success/failure contract; Web does not
 support file-output methods. See [error handling](error-handling.md#result-pattern)
 and [transfer behavior](streaming.md).
+
+## Pending correctness release
+
+Python remains the default and all public package entry points remain. Observable
+corrections include truthful partial/failure results, unique per-job CLI output
+directories, shell-free literal arguments, explicit zero retry/timeout handling,
+and cancellation that settles after owned cleanup. ZIPs include validated
+referenced images; raw streaming with referenced assets requires ZIP output.
+CLI OCR defaults now follow the installed converter instead of forcing EasyOCR.
+Python 2.60.1 does not support CLI page ranges; unsupported requests reject.
+
+TypeScript consumers need >=5.5; SDK runtime Node >=18 is unchanged. ZIP support
+uses optional `fflate` loaded on demand. Browser/Bun/Deno async ZIP downloads
+retain bytes. Browser OCR applications should configure a bundled `workerUrl`.
+See the [validation and limitations record](review-evidence/native-conversion/release-hardening-2026-11-06.md)
+before adopting paths outside the demonstrated runtime coverage.
 
 ## Related
 

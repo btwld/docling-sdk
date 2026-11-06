@@ -2,7 +2,7 @@
 
 [Home](../README.md) > [Docs](./README.md) > CLI Client
 
-The CLI client wraps the Python [Docling](https://github.com/DS4SD/docling) command-line tool. It runs conversions locally without a server, with support for batch processing, directory watching, file validation, and automatic retry with error classification.
+The CLI client wraps the Python [Docling](https://github.com/DS4SD/docling) command-line tool. It runs conversions locally without a server, with support for batch processing, directory watching, file validation and isolated conversion jobs.
 
 ## Prerequisites
 
@@ -49,6 +49,24 @@ console.log(result.document.md_content);
 console.log(result.status);
 ```
 
+Inspect `status`: it is `success` only when every requested format has validated
+output, `partial_success` when some work is incomplete, and `failure` when no
+requested format succeeds. Errors are retained in `result.errors`; a zero process
+exit alone does not establish successful conversion. Structured `json_content`
+is a parsed document object.
+
+Each request snapshots its input and writes beneath a private job directory in
+`outputDir`. Successful output paths exposed by `file-read` or completion events
+belong to that job; do not assume a shared `outputDir/<basename>.md` layout.
+Input snapshots and failed artifacts are removed. ZIP/stream methods consume
+validated output and remove their temporary job after consumption.
+
+The `html_split_page` format uses Python Docling's split-page HTML export and
+returns `.html` content in `document.html_content` (or `outputs.html` for the
+CLI-specific methods). When both HTML variants are requested, their files remain
+separate in the private job and ZIP. The single HTML content field represents the
+last requested HTML variant.
+
 ### Convenience methods
 
 ```typescript
@@ -76,6 +94,15 @@ if (result.success && result.fileStream) {
 }
 ```
 
+### convertToStream
+
+`convertToStream(options, destination, returnAsZip)` validates the requested
+outputs before writing content. The returned promise waits for the destination's
+writable side to finish, including when conversion returns a failure result.
+A destination error or premature finish stops active conversion, prevents later
+formats from starting and rejects after job cleanup. For Duplex destinations,
+the readable side need not finish. Rejected operations destroy the destination.
+
 ## CLI-Specific Features
 
 ### Batch processing
@@ -98,6 +125,10 @@ for (const r of result.results) {
   console.log(`${r.file}: ${r.success ? "OK" : r.error}`);
 }
 ```
+
+`outputDir` applies only to this batch; it does not change the client's output
+directory. `maxConcurrency` must be a positive safe integer; invalid values reject
+before any conversion starts. `parallel: false` runs one file at a time.
 
 ### Process directory
 
@@ -183,42 +214,63 @@ try {
 
 ### Error classification and retry
 
-The CLI client classifies errors into five types and retries accordingly:
+Conversion no longer retries automatically based on words in converter
+diagnostics. A timeout, signal exit or message containing "temporary" does not
+start another conversion. Parent SIGINT/SIGTERM rejects content/progress/stream
+conversion as `ProcessAbortError`, stops later formats/sources and cleans the job.
+`batch()` and `processDirectory()` also propagate cancellation; a parallel batch
+waits for every started job in its current chunk to clean up before rejecting,
+and starts no later chunk. Earlier completed files remain available at their
+exposed paths. `convertMultipleFiles()` eagerly dispatches its inputs and retains
+its per-file failure results. If its progress callback throws, the aggregate waits
+for started sibling conversions to settle before rejecting. ZIP file-output
+methods preserve their failure-result contract, retaining the execution error in
+its details. Callers may explicitly retry after inspecting the returned
+status/errors or a rejected operation.
 
-| Type | Retryable | Description |
-|------|-----------|-------------|
-| `transient` | Yes | Temporary failures, intermittent issues |
-| `timeout` | Yes | Process timeouts |
-| `resource` | Yes | Memory or disk pressure |
-| `permanent` | No | Invalid input, corrupt files |
-| `configuration` | No | Wrong binary path, missing Python |
+Readiness requires a successful version probe. Executable paths and arguments
+remain literal values; Python module fallback uses a Python executable plus
+`-m` and a module name. Command strings containing shell syntax are unsupported.
 
-Retry uses exponential backoff:
+The validated Python runtime is Docling **2.60.1**. Its CLI does not expose a
+page-range flag, so unsupported `page_range` requests reject instead of pretending
+to convert that subset. `document_timeout` is forwarded to Python and is not a
+hard deadline: a real standard-pipeline probe exceeded that value while upstream
+reported success. Configure the SDK's process `timeout` for a killable process
+deadline; it includes process/model startup and is separate from the engine's
+internal document timer.
 
-```
-Delay = min(baseDelay * backoffMultiplier^attempt, maxDelay)
-```
+Without an explicit `ocrEngine`/`ocr_engine`, the converter selects its installed
+OCR backend. Standard Python Docling installations do not necessarily include
+EasyOCR; the SDK no longer forces that optional engine.
 
-Default retry configuration:
+CLI-specific `sources` accept files, recursively expanded directories, and HTTP(S)
+URLs. Each remote source is downloaded once into the job and reused across formats;
+safe response filenames take precedence over the URL basename. Directory expansion
+skips discovered symlinks, output trees and owned job namespaces. Watchers likewise
+ignore owned job snapshots, including when input and output share a root.
 
-| Setting | Default |
-|---------|---------|
-| `maxRetries` | 3 |
-| `baseDelay` | 1000 ms |
-| `maxDelay` | 30000 ms |
-| `backoffMultiplier` | 2 |
-| `retryableErrors` | transient, timeout, resource |
+Referenced images are included in ZIPs with portable Markdown/HTML/JSON paths.
+Use ZIP streaming for referenced assets; a raw text stream cannot retain temporary
+asset files. Completed non-ZIP outputs remain under their reported private job
+directory. These guarantees cover the validated artifact inventory, not arbitrary
+external links embedded in a document.
+
+The shared process runner tracks exit code and signal separately, bounds captured
+output, and waits for cleanup before settling a timeout or abort. `CliUtils`
+preserves its numeric `exitCode` contract with `-1` for a signal/no exit status,
+exposes the `signal`, and accepts `signal`/`maxBuffer` execution options. POSIX
+termination targets the process group; Windows tree termination is best effort.
 
 ## Progress Events
 
 The CLI client exposes a `progress` event emitter:
 
 ```typescript
-client.progress.on("progress", (event) => {
+client.progress.on("enhanced-progress", (event) => {
   console.log(event.type);           // "start" | "progress" | "complete" | "error"
   console.log(event.file);           // current file
   console.log(event.percentage);     // overall progress
-  console.log(event.eta);            // estimated time remaining (ms)
   console.log(event.currentStep);    // current processing step
   console.log(event.filesCompleted); // files completed so far
   console.log(event.totalFiles);     // total files to process
@@ -233,15 +285,16 @@ The `ProgressEvent` structure:
 | `file` | `string` | Current file being processed |
 | `format` | `string` | Current output format |
 | `percentage` | `number` | Overall progress (0-100) |
-| `eta` | `number` | Estimated time remaining in ms |
 | `currentStep` | `string` | Current processing step |
 | `filesCompleted` | `number` | Number of files completed |
 | `totalFiles` | `number` | Total number of files |
 | `formatsCompleted` | `number` | Formats completed for current file |
 | `totalFormats` | `number` | Total formats to generate |
 | `processingTime` | `number` | Time elapsed in ms |
-| `averageTimePerFile` | `number` | Average time per file in ms |
-| `averageTimePerFormat` | `number` | Average time per format in ms |
+
+Per-format activity is also available through `format-processing-start`,
+`format-processing-complete` and `format-processing-error`. Completion events
+carry the actual conversion status; failed/partial jobs do not emit full success.
 
 ## CLI Convert Options
 
