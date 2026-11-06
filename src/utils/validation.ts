@@ -189,7 +189,7 @@ export class ValidationUtils {
 
     if (options.picture_description_area_threshold !== undefined) {
       if (
-        typeof options.picture_description_area_threshold !== "number" ||
+        !Number.isFinite(options.picture_description_area_threshold) ||
         options.picture_description_area_threshold < 0 ||
         options.picture_description_area_threshold > 1
       ) {
@@ -198,7 +198,7 @@ export class ValidationUtils {
     }
 
     if (options.images_scale !== undefined) {
-      if (typeof options.images_scale !== "number" || options.images_scale <= 0) {
+      if (!Number.isFinite(options.images_scale) || options.images_scale <= 0) {
         errors.push("images_scale must be a positive number");
       }
     }
@@ -234,7 +234,7 @@ export class ValidationUtils {
     }
 
     if (options.documentTimeout !== undefined) {
-      if (typeof options.documentTimeout !== "number" || options.documentTimeout <= 0) {
+      if (!Number.isFinite(options.documentTimeout) || options.documentTimeout <= 0) {
         errors.push("documentTimeout must be a positive number");
       }
     }
@@ -253,7 +253,7 @@ export class ValidationUtils {
 
     if (options.pictureDescriptionAreaThreshold !== undefined) {
       if (
-        typeof options.pictureDescriptionAreaThreshold !== "number" ||
+        !Number.isFinite(options.pictureDescriptionAreaThreshold) ||
         options.pictureDescriptionAreaThreshold < 0 ||
         options.pictureDescriptionAreaThreshold > 1
       ) {

@@ -95,15 +95,10 @@ export class DoclingFileError extends DoclingError {
  */
 export const DoclingUtils = {
   /**
-   * Check if a file path exists and is readable
+   * Check path syntax only; this does not access the filesystem.
    */
   isValidFilePath: (path: string): boolean => {
-    try {
-      return typeof path === "string" && path.length > 0;
-    } catch {
-      // Ignore errors
-      return false;
-    }
+    return typeof path === "string" && path.length > 0 && !path.includes("\0");
   },
 
   /**

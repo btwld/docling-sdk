@@ -78,8 +78,9 @@
     "examples:web-ocr": "cd examples/web-ocr && npm run dev",
     "examples:worker": "cd examples/runtimes/cloudflare-worker && wrangler dev",
     "openapi:fetch": "tsx scripts/fetch-openapi.ts",
-    "openapi:generate": "openapi-typescript openapi/docling-serve.json -o src/types/generated/api.ts",
-    "openapi:update": "npm run openapi:fetch && npm run openapi:generate"
+    "openapi:generate": "node scripts/generate-openapi.mjs",
+    "openapi:update": "npm run openapi:fetch && npm run openapi:generate",
+    "openapi:check": "node scripts/generate-openapi.mjs --check"
   },
   "keywords": [
     "docling",
@@ -136,7 +137,7 @@
     "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.8",
     "@vitest/ui": "^2.1.8",
-    "openapi-typescript": "^7.10.1",
+    "openapi-typescript": "7.10.1",
     "rimraf": "^6.0.1",
     "tsc-alias": "^1.8.16",
     "tsup": "^8.3.5",

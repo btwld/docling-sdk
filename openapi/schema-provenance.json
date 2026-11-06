@@ -1,0 +1,20 @@
+{
+  "serve_repository": "https://github.com/docling-project/docling-serve",
+  "serve_tag": "v1.7.2",
+  "serve_commit": "1ec44220f5a33bd2e36b2e066390e70c77706192",
+  "schema_sha256": "46302232cf771b7e593f51c0bf34a8b7786ee33037ef1a1c3552129770bf3bbc",
+  "generation": "scripts/export-serve-schema.py (create_app().openapi(), no model startup)",
+  "python": "3.12.12",
+  "packages": {
+    "docling-serve": "1.7.2",
+    "docling": "2.60.1",
+    "docling-core": "2.106.0",
+    "docling-jobkit": "1.9.1",
+    "fastapi": "0.118.3",
+    "pydantic": "2.14.3"
+  },
+  "generator": {
+    "name": "openapi-typescript",
+    "version": "7.10.1"
+  }
+}
