@@ -3,10 +3,6 @@
 // application environment inheritance, or namespace-failure skip is permitted.
 import childProcess from "node:child_process";
 import { createHash } from "node:crypto";
-import { createServer, connect } from "node:net";
-import { syncBuiltinESMExports } from "node:module";
-import { basename, dirname, join, resolve, sep } from "node:path";
-import { tmpdir } from "node:os";
 import {
   copyFile,
   lstat,
@@ -22,6 +18,10 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { connect, createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF = fileURLToPath(import.meta.url);
@@ -63,7 +63,7 @@ function cleanEnvironment(home) {
 
 // Bound every subprocess independently. Logs contain hashes/counts only: no
 // inherited environment, command lines, npm credentials, or document excerpts.
-async function command(executable, args, { cwd, env, timeoutMs, receipt }) {
+async function command(executable, args, { cwd, env, timeoutMs, receipt, diagnostics = false }) {
   const started = Date.now();
   const result = await new Promise((done, reject) => {
     const child = originalSpawn(executable, args, {
@@ -124,7 +124,121 @@ async function command(executable, args, { cwd, env, timeoutMs, receipt }) {
     !result.stopped && result.code === 0 && result.signal === null,
     "bounded-subprocess-failed"
   );
-  return result.stdout.toString("utf8");
+  return diagnostics ? result : result.stdout.toString("utf8");
+}
+
+// The pinned timing scopes also record failed attempts. Require a complete
+// timing block AND clean debug diagnostics AND checked output, never model names.
+const MODEL_STAGES = Object.freeze({
+  "original.pdf": ["layout.predict", "tf.encoder", "tf.decode_loop", "tf.bbox"],
+  "scanned.pdf": ["layout.predict", "ocr.det.net", "ocr.rec"],
+});
+function modelExecutionEvidence(diagnostics, expected) {
+  const stages = new Map();
+  let block = false;
+  let blocks = 0;
+  let totals = 0;
+  let batches = 0;
+  for (const line of diagnostics.split(/\r?\n/)) {
+    if (line === "batch: 1 converted, 0 failed") {
+      batches++;
+      continue;
+    }
+    // A selected substitute font is normal for these synthetic PDFs. Missing
+    // fonts, geometric tables, region-only OCR, ORT warnings/errors and retries
+    // after inference failure must still reject even with all timing rows.
+    const diagnostic = line.replace(/^docling-pdf fallback font: /, "docling-pdf font: ");
+    ensure(
+      !/\b(?:warn(?:ing)?|errors?|exceptions?|panic(?:ked)?|fail(?:ed|ure)?|unavailable|missing|not found|fall(?:ing)? back|fallback|geometric|region-scoped|timed? out|partial)\b|\[[EW]:onnxruntime:/i.test(diagnostic),
+      "model-execution-degraded"
+    );
+    if (line === "=== DOCLING_RS timing (per stage, wall-clock) ===") {
+      ensure(!block && blocks === 0, "model-execution-timing-block");
+      blocks++;
+      block = true;
+    } else if (/^ {2}TOTAL \(summed\)\s+\d+\.\d+ ms$/.test(line)) {
+      ensure(block, "model-execution-timing-total");
+      totals++;
+      block = false;
+    } else if (block) {
+      const row = /^ {2}([a-z][a-z0-9_.]*)\s+(\d+\.\d+) ms\s+(\d+\.\d+)%\s+\((\d+) calls\)$/.exec(line);
+      ensure(row && !stages.has(row[1]), "model-execution-timing-row");
+      const elapsedMs = Number(row[2]);
+      const calls = Number(row[4]);
+      ensure(
+        Number.isFinite(elapsedMs) && Number.isSafeInteger(calls) && calls > 0,
+        "model-execution-timing-value"
+      );
+      stages.set(row[1], { calls, elapsedMs });
+    }
+  }
+  ensure(!block && blocks === 1 && totals === 1, "model-execution-complete-timing");
+  ensure(batches === 1, "model-execution-complete-batch");
+  for (const stage of expected)
+    ensure(stages.get(stage)?.elapsedMs > 0, "model-execution-required-stage");
+  return Object.fromEntries(expected.map((stage) => [stage, stages.get(stage)]));
+}
+
+function refreshSandboxWork(sandboxArgs, work) {
+  ensure(
+    sandboxArgs?.includes("--unshare-all") && sandboxArgs.includes("--clearenv") &&
+      sandboxArgs.some((arg, index) => arg === "--proc" && sandboxArgs[index + 1] === "/proc"),
+    "sdk-sandbox-launch-not-observed"
+  );
+  const boundary = sandboxArgs.lastIndexOf("--");
+  ensure(boundary > 0 && sandboxArgs[boundary + 1] === "/runtime/docling-rs", "sandbox-terminal-boundary");
+  const args = [...sandboxArgs];
+  let rebound = 0;
+  for (let index = 0; index < boundary; index++) {
+    if (args[index] === "--bind" && args[index + 2] === "/work") {
+      args[index + 1] = work;
+      rebound++;
+    }
+  }
+  ensure(rebound === 1, "sdk-private-work-mount-observed");
+  return args;
+}
+
+function validateFixtureContent(document, markdown, { markers = [], pageMarkers = {}, table, scan }) {
+  const text = document.texts.map((item) => item.text).join("\n");
+  for (const marker of markers)
+    ensure(
+      text.includes(marker) &&
+        (markdown.includes(marker) || markdown.includes(marker.replaceAll("_", "\\_"))),
+      "expected-text-marker"
+    );
+  for (const [page, marker] of Object.entries(pageMarkers))
+    ensure(
+      document.texts.some(
+        (item) => item.text.includes(marker) &&
+          item.prov.some((prov) => prov.page_no === Number(page))
+      ),
+      "expected-text-on-requested-page"
+    );
+  if (table) {
+    const found = document.tables.find(
+      (item) => item.data.num_rows === 3 && item.data.num_cols === 2
+    );
+    ensure(found, "three-by-two-table");
+    const expected = [["Fruit", "Count"], ["Apples", "11"], ["Pears", "22"]];
+    for (const [row, values] of expected.entries())
+      for (const [col, value] of values.entries()) {
+        ensure(
+          found.data.table_cells.some(
+            (cell) => cell.start_row_offset_idx === row &&
+              cell.start_col_offset_idx === col && cell.text.trim() === value
+          ),
+          "table-cell-content"
+        );
+        ensure(markdown.includes(value), "markdown-table-content");
+      }
+  }
+  if (scan)
+    for (const content of [text, markdown])
+      ensure(
+        /ALPHA/i.test(content) && /Apples\s*11/i.test(content) && /Pears\s*22/i.test(content),
+        "ocr-content-required"
+      );
 }
 
 async function parent(args) {
@@ -356,19 +470,10 @@ except OSError as error:
 else: raise AssertionError('model mount writable')
 print(json.dumps({'privateNamespaces': sorted(namespaces), 'privateProcfs': True, 'hostSentinelHidden': True, 'modelsReadOnly': True, 'blocked': blocked}))
 `;
-    const boundary = sandboxArgs.lastIndexOf("--");
-    ensure(boundary > 0, "sandbox-terminal-boundary");
-    const probeBoundary = sandboxArgs.slice(0, boundary);
     // checkRuntime removes its temporary work directory before returning. Keep
     // the observed /work mount policy, rebinding its source to fresh owned space.
-    let rebound = false;
-    for (let index = 0; index < probeBoundary.length; index++) {
-      if (probeBoundary[index] === "--bind" && probeBoundary[index + 2] === "/work") {
-        probeBoundary[index + 1] = probeWork;
-        rebound = true;
-      }
-    }
-    ensure(rebound, "sdk-private-work-mount-observed");
+    const refreshed = refreshSandboxWork(sandboxArgs, probeWork);
+    const probeBoundary = refreshed.slice(0, refreshed.lastIndexOf("--"));
     const probeArgs = [
       ...probeBoundary,
       "--ro-bind",
@@ -409,6 +514,7 @@ async function consumer(configPath) {
   const fixtures = join(output, "fixtures");
   const runtimeDirectory = join(directory, "native-runtime");
   const launches = [];
+  const modelLaunches = new Map();
   let importGuard = true;
   let sideEffects = 0;
   let sdkFetchCalls = 0;
@@ -549,9 +655,7 @@ async function consumer(configPath) {
       )
     );
     const markdown = mdFile.bytes.toString("utf8");
-    const text = document.texts.map((item) => item.text).join("\n");
-    for (const marker of markers)
-      ensure(text.includes(marker) && markdown.includes(marker), "expected-text-marker");
+    validateFixtureContent(document, markdown, { markers, pageMarkers, table });
     const actualPages = Object.keys(document.pages)
       .map(Number)
       .sort((a, b) => a - b);
@@ -559,15 +663,6 @@ async function consumer(configPath) {
       JSON.stringify(actualPages) === JSON.stringify(result.coverage.completed),
       "sdk-coverage-matches-json-pages"
     );
-    for (const [page, marker] of Object.entries(pageMarkers)) {
-      ensure(
-        document.texts.some(
-          (item) =>
-            item.text.includes(marker) && item.prov.some((prov) => prov.page_no === Number(page))
-        ),
-        "expected-text-on-requested-page"
-      );
-    }
     if (pages) {
       ensure(
         JSON.stringify(result.coverage.completed) === JSON.stringify(pages),
@@ -582,30 +677,6 @@ async function consumer(configPath) {
         "json-page-coverage"
       );
       if (status === "success") ensure(result.coverage.complete === true, "complete-page-coverage");
-    }
-    if (table) {
-      const found = document.tables.find(
-        (item) => item.data.num_rows === 3 && item.data.num_cols === 2
-      );
-      ensure(found, "three-by-two-table");
-      const expected = [
-        ["Fruit", "Count"],
-        ["Apples", "11"],
-        ["Pears", "22"],
-      ];
-      for (const [row, values] of expected.entries())
-        for (const [col, value] of values.entries()) {
-          ensure(
-            found.data.table_cells.some(
-              (cell) =>
-                cell.start_row_offset_idx === row &&
-                cell.start_col_offset_idx === col &&
-                cell.text.trim() === value
-            ),
-            "table-cell-content"
-          );
-          ensure(markdown.includes(value), "markdown-table-content");
-        }
     }
     const assets = [...inventory.values()].filter((file) => file.kind === "asset");
     if (asset)
@@ -665,13 +736,67 @@ async function consumer(configPath) {
     };
   }
   async function convert(name, caseName, expectations, options = {}) {
+    const launchIndex = launches.length;
     const result = await client.convertFile(input(name), {
       outputDirectory: outputRoot(caseName),
       timeoutMs: 90_000,
       ...options,
     });
     const details = await validateResult(result, name, expectations, caseName);
-    return { result, details };
+    const sandboxArgs = launches.slice(launchIndex).find((launch) => launch.conversion)?.args;
+    return { result, details, sandboxArgs };
+  }
+  async function modelExecutionProbe(name, expectations) {
+    const work = await mkdtemp(join(directory, "model-execution-"));
+    try {
+      await mkdir(join(work, "input"), { mode: 0o700 });
+      await mkdir(join(work, "output"), { mode: 0o700 });
+      const source = join(work, "input/source.pdf");
+      await copyFile(input(name), source);
+      const inputSha256 = sha256(await readFile(source));
+      ensure(inputSha256 === sha256(await readFile(input(name))), "model-execution-input-copy");
+      // Reuse a successful, unrestricted SDK PDF conversion verbatim, including
+      // executable/models/fonts, procfs and every isolation/CLI option. Only the
+      // owned /work source changes; debug/timing are explicit probe-only env.
+      const args = refreshSandboxWork(modelLaunches.get(name), work);
+      ensure(args.at(-1) === "/work/input/source.pdf", "model-execution-sdk-pdf-launch");
+      args.splice(args.lastIndexOf("--"), 0,
+        "--setenv", "DOCLING_RS_DEBUG", "1", "--setenv", "DOCLING_RS_TIMING", "1");
+      const label = `model-execution-${name.replace(".", "-")}`;
+      const result = await command("/usr/bin/bwrap", args, {
+        cwd: work,
+        env: {},
+        timeoutMs: 90_000,
+        receipt: join(output, `${label}-process.json`),
+        diagnostics: true,
+      });
+      const stages = modelExecutionEvidence(
+        Buffer.concat([result.stderr, result.stdout]).toString("utf8"), MODEL_STAGES[name]
+      );
+      const documentPath = join(work, "output/source.json");
+      const jsonContract = JSON.parse(await command(
+        config.python, [config.fixtureScript, "--check-document", documentPath],
+        { cwd: directory, env, timeoutMs: 30_000 }
+      ));
+      const documentBytes = await readFile(documentPath);
+      const markdownBytes = await readFile(join(work, "output/source.md"));
+      const document = JSON.parse(documentBytes.toString("utf8"));
+      validateFixtureContent(document, markdownBytes.toString("utf8"), expectations);
+      ensure(
+        JSON.stringify(Object.keys(document.pages).map(Number).sort((a, b) => a - b)) ===
+          JSON.stringify(expectations.pages),
+        "model-execution-page-coverage"
+      );
+      ensure(sha256(await readFile(source)) === inputSha256, "model-execution-input-unchanged");
+      return {
+        stages, inputSha256, jsonContract,
+        json: { bytes: documentBytes.length, sha256: sha256(documentBytes) },
+        markdown: { bytes: markdownBytes.length, sha256: sha256(markdownBytes) },
+        processReceipt: `${label}-process.json`,
+      };
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
   }
   try {
     await test("packed-import-before-installation", async () => {
@@ -843,7 +968,8 @@ async function consumer(configPath) {
       ],
     ])
       await test(`real-${name}`, async () => {
-        const { result, details } = await convert(name, `real-${name}`, expectation);
+        const { result, details, sandboxArgs } = await convert(name, `real-${name}`, expectation);
+        if (name === "original.pdf") modelLaunches.set(name, sandboxArgs);
         if (name.endsWith("docx"))
           ensure(
             result.coverage.basis === "not-reported" && result.coverage.complete === undefined,
@@ -859,7 +985,8 @@ async function consumer(configPath) {
         return details;
       });
     await test("real-scanned-ocr", async () => {
-      const { result, details } = await convert("scanned.pdf", "scan", { pages: [1] });
+      const { result, details, sandboxArgs } = await convert("scanned.pdf", "scan", { pages: [1] });
+      modelLaunches.set("scanned.pdf", sandboxArgs);
       const text = result.document.texts.map((item) => item.text).join(" ");
       // Do not gate a known OCR spelling error as exact PDF/Python parity.
       ensure(
@@ -872,6 +999,14 @@ async function consumer(configPath) {
       );
       return details;
     });
+    for (const [name, expectations] of [
+      ["original.pdf", {
+        pages: [1, 2], markers: ["PDF_ALPHA", "PDF_OMEGA"],
+        pageMarkers: { 1: "PDF_ALPHA", 2: "PDF_OMEGA" }, table: true,
+      }],
+      ["scanned.pdf", { pages: [1], scan: true }],
+    ])
+      await test(`real-model-execution-${name}`, () => modelExecutionProbe(name, expectations));
     await test("real-pdf-page-range", async () => {
       const { result, details } = await convert(
         "original.pdf",

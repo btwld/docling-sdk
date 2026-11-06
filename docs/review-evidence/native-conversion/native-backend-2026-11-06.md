@@ -50,6 +50,16 @@ merge, custom native ABI, TypeScript-to-Dart dependency or implicit setup.
   the publication attempt. Committed installs report success; uncommitted
   cancellation fails and cleans staging; collisions preserve caller data.
   SIGINT/SIGTERM and raced-collision regressions pass.
+- **Model execution was not established by plain table/text assertions.** Independent
+  review showed geometric fallback could satisfy the simple table checks. The
+  real-runtime gate now additionally requires positive layout, OCR detector/recognizer
+  and TableFormer encoder/decoder/bbox execution timings in the same sandbox,
+  clean diagnostics and valid content. Retained positive/fallback/error controls
+  exercise this validator; only compatible live CI can establish the final pass.
+- **macOS setup CLI path aliases.** Packed-consumer CI found that the import/main
+  guard compared a real module path to a symlink-spelled argv path and did nothing.
+  Canonicalizing argv fixes this; the 60-case setup suite includes a symlinked
+  invocation regression. Native conversion is still explicitly Linux-only.
 
 Input/output validation uses existing `fflate` and `saxes`, not a native ABI or
 new general plugin/runner framework. The existing shell-free process runner
@@ -86,7 +96,7 @@ No executable/model/font bytes are included in the npm artifact.
 | --- | --- |
 | Full production coverage run | 1,189 passed; six explicit sandbox capability skips; 56 files |
 | Coverage lines / statements / functions / branches | 94.73% / 93.09% / 94.86% / 84.60%; all enforced 80% gates pass |
-| Setup suite after final cancellation repair | 59 passed, no skips |
+| Setup suite after cancellation/CLI-alias repairs | 60 passed, no skips |
 | Packed consumers | Full/omitted optional dependencies, real subprocess/loopback HTTP, TypeScript 5.5.4 NodeNext, real Chrome API and browser bundling pass |
 | Native bundle/import boundary | No model/executable/font payload; optional setup help and native import available without installation; root/browser exports unchanged |
 | Independent reviews | Artifact publication confirmed; setup commit/cancellation finding repaired with red/green evidence |
@@ -109,8 +119,10 @@ Reproducible code is checked in under `scripts/validate-native*` and
 
 ## Adoption and release boundary
 
-Review in stack order: existing R1–R7 hardening and delivery (#88–#93), then native
-runtime, artifact validation, public client/setup and real-runtime validation.
+Review in stack order: existing R1–R7 hardening and delivery (#88–#93), then [runtime #95](https://github.com/btwld/docling-sdk/pull/95),
+[artifact validation #96](https://github.com/btwld/docling-sdk/pull/96),
+[client/setup #97](https://github.com/btwld/docling-sdk/pull/97) and
+[real-runtime validation #98](https://github.com/btwld/docling-sdk/pull/98).
 No parity/speed claim is made. macOS/Windows/ARM, broader glyph/language quality,
 real browser transformer inference and existing Python CLI upstream limitations
 remain outside this native profile. Wayfinder's Dart runner remains separate and
