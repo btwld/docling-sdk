@@ -84,6 +84,7 @@ export class CrossWebSocket {
   private options: WebSocketAdapterOptions;
   private hooks: WebSocketHooks;
   private connectionPromise: Promise<WebSocketPeer> | null = null;
+  private generation = 0;
 
   constructor(url: string, options: Omit<WebSocketAdapterOptions, "url"> = {}) {
     this.options = { ...options, url };
@@ -94,23 +95,22 @@ export class CrossWebSocket {
    * Connect to the WebSocket server
    */
   async connect(): Promise<WebSocketPeer> {
-    if (this.connectionPromise) {
-      return this.connectionPromise;
-    }
-
-    this.connectionPromise = (async () => {
-      this.adapter = await createWebSocketAdapter({
-        ...this.options,
-        hooks: this.hooks,
-      });
-      return this.adapter.connect();
+    const peer = this.adapter?.getPeer();
+    if (peer && this.isConnected()) return peer;
+    if (this.connectionPromise) return this.connectionPromise;
+    const generation = ++this.generation;
+    const promise = (async () => {
+      const adapter = await createWebSocketAdapter({ ...this.options, hooks: this.hooks });
+      if (generation !== this.generation) throw new Error("WebSocket connection canceled");
+      this.adapter = adapter;
+      adapter.setHooks(this.hooks);
+      return adapter.connect();
     })();
-
+    this.connectionPromise = promise;
     try {
-      return await this.connectionPromise;
-    } catch (error) {
-      this.connectionPromise = null;
-      throw error;
+      return await promise;
+    } finally {
+      if (this.connectionPromise === promise) this.connectionPromise = null;
     }
   }
 
@@ -161,6 +161,7 @@ export class CrossWebSocket {
    * Close the connection
    */
   close(code = 1000, reason = ""): void {
+    this.generation++;
     this.adapter?.close(code, reason);
     this.adapter = null;
     this.connectionPromise = null;

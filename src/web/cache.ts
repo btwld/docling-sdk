@@ -6,13 +6,12 @@
 
 export type ProgressCallback = (progress: number, status: string) => void;
 
-const progresses = new Map<string, { loaded: number; total: number }>();
-
 /**
  * Create a custom cache object for @huggingface/transformers
  * that tracks download progress and uses the Cache API for persistence
  */
 export function createCustomCache(onProgress?: ProgressCallback) {
+  const progresses = new Map<string, { loaded: number; total: number }>();
   return {
     async match(request: string | Request): Promise<Response | undefined> {
       const cache = await caches.open("hf-model-cache");
@@ -36,7 +35,8 @@ export function createCustomCache(onProgress?: ProgressCallback) {
       }
 
       const contentLength = response.headers.get("Content-Length");
-      const total = contentLength ? Number.parseInt(contentLength, 10) : 0;
+      const parsedLength = Number(contentLength);
+      const total = Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : 0;
       let loaded = 0;
 
       const reader = response.body?.getReader();
@@ -46,32 +46,43 @@ export function createCustomCache(onProgress?: ProgressCallback) {
 
       const chunks: BlobPart[] = [];
 
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        chunks.push(value);
-        loaded += value.length;
-        progresses.set(fixedUrl, { loaded, total });
+          chunks.push(value);
+          loaded += value.length;
+          progresses.set(fixedUrl, { loaded, total });
 
-        let totalLoaded = 0;
-        let totalSize = 0;
-        for (const { loaded: l, total: t } of progresses.values()) {
-          if (t) {
-            totalLoaded += l;
-            totalSize += t;
+          let totalLoaded = 0;
+          let totalSize = 0;
+          for (const { loaded: l, total: t } of progresses.values()) {
+            if (t) {
+              totalLoaded += l;
+              totalSize += t;
+            }
           }
+
+          const aggregateProgress = totalSize > 0 ? Math.min(totalLoaded / totalSize, 1) : 0;
+          onProgress?.(aggregateProgress, `Downloading: ${getFileName(fixedUrl)}`);
         }
 
-        const aggregateProgress = totalSize > 0 ? totalLoaded / totalSize : 0;
-        onProgress?.(aggregateProgress, `Downloading: ${getFileName(fixedUrl)}`);
+        const blob = new Blob(chunks);
+        const finalResponse = new Response(blob, { headers: response.headers });
+        await cache.put(fixedUrl, finalResponse.clone());
+
+        onProgress?.(1, `Downloaded: ${getFileName(fixedUrl)}`);
+        return finalResponse;
+      } catch (error) {
+        await reader.cancel().catch(() => {
+          // Preserve the original download/cache error if stream cancellation also fails.
+        });
+        throw error;
+      } finally {
+        progresses.delete(fixedUrl);
+        reader.releaseLock();
       }
-
-      const blob = new Blob(chunks);
-      const finalResponse = new Response(blob, { headers: response.headers });
-      await cache.put(fixedUrl, finalResponse.clone());
-
-      return finalResponse;
     },
 
     async put(): Promise<void> {

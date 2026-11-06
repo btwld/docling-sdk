@@ -16,7 +16,8 @@ export function isNode(): boolean {
     typeof globalThis !== "undefined" &&
     typeof globalThis.process !== "undefined" &&
     globalThis.process.versions?.node !== undefined &&
-    !isBun()
+    !isBun() &&
+    !isDeno()
   );
 }
 

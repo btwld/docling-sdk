@@ -39,6 +39,13 @@ export class DoclingWebClient implements DoclingWeb {
   private worker: Worker | null = null;
   private isReady = false;
   private isProcessing = false;
+  private workerBlobUrl: string | null = null;
+  private initialization: Promise<void> | null = null;
+  private pendingInit: { resolve: () => void; reject: (error: Error) => void } | null = null;
+  private pendingProcess: {
+    resolve: (result: WebOCRResult) => void;
+    reject: (error: Error) => void;
+  } | null = null;
 
   constructor(config: DoclingWebClientConfig) {
     this.config = {
@@ -61,72 +68,120 @@ export class DoclingWebClient implements DoclingWeb {
     return this.isProcessing;
   }
 
-  async initialize(): Promise<void> {
-    if (this.isReady) return;
-
-    if (this.worker) {
-      throw new Error("Initialization already in progress");
-    }
-
-    return new Promise((resolve, reject) => {
-      const workerUrl = this.config.workerUrl ?? this.createWorkerBlobUrl();
-      this.worker = new Worker(workerUrl, { type: "module" });
-
-      type InitHandlerMap = {
-        [K in WorkerMessageFromWorker["type"]]?: (
-          msg: Extract<WorkerMessageFromWorker, { type: K }>
-        ) => void;
-      };
-
-      const initHandlers: InitHandlerMap = {
-        PROGRESS: (msg) => {
-          this.events.emit("loading", {
-            progress: msg.progress,
-            status: msg.status,
-          });
-        },
-        READY: () => {
-          this.isReady = true;
-          this.events.emit("ready", undefined as unknown as undefined);
-          resolve();
-        },
-        ERROR: (msg) => {
-          const error = { message: msg.error };
-          this.events.emit("error", error);
-          if (!this.isReady) {
-            reject(new Error(msg.error));
-          }
-        },
-      };
-
-      const handleMessage = (event: MessageEvent<WorkerMessageFromWorker>) => {
-        const handler = initHandlers[event.data.type] as
-          | ((msg: WorkerMessageFromWorker) => void)
-          | undefined;
-        handler?.(event.data);
-      };
-
-      this.worker.addEventListener("message", handleMessage);
-      this.worker.addEventListener("error", (event) => {
-        const error = { message: event.message || "Worker error" };
-        this.events.emit("error", error);
-        reject(new Error(error.message));
-      });
-
-      this.worker.postMessage({
-        type: "INIT",
-        config: this.config,
-      });
+  initialize(): Promise<void> {
+    if (this.isReady) return Promise.resolve();
+    if (this.initialization) return this.initialization;
+    const promise = new Promise<void>((resolve, reject) => {
+      this.pendingInit = { resolve, reject };
+      try {
+        if (!this.config.workerUrl) this.workerBlobUrl = this.createWorkerBlobUrl();
+        const url = this.config.workerUrl ?? this.workerBlobUrl ?? "";
+        const worker = new Worker(url, { type: "module" });
+        this.worker = worker;
+        worker.addEventListener("message", (event: MessageEvent<WorkerMessageFromWorker>) => {
+          if (this.worker !== worker) return;
+          // Observer exceptions belong to browser event dispatch, not worker failure.
+          this.handleWorkerMessage(event.data);
+        });
+        worker.addEventListener("error", (event) => {
+          if (this.worker === worker) this.failWorker(new Error(event.message || "Worker error"));
+        });
+        worker.addEventListener("messageerror", () => {
+          if (this.worker === worker)
+            this.failWorker(new Error("Could not deserialize worker message"));
+        });
+        worker.postMessage({ type: "INIT", config: this.config });
+      } catch (error) {
+        this.failWorker(error instanceof Error ? error : new Error(String(error)));
+      }
     });
+    this.initialization = promise;
+    const clear = () => {
+      if (this.initialization === promise) this.initialization = null;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  private handleWorkerMessage(message: WorkerMessageFromWorker): void {
+    switch (message.type) {
+      case "PROGRESS":
+        this.events.emit("loading", { progress: message.progress, status: message.status });
+        break;
+      case "READY": {
+        this.isReady = true;
+        const pending = this.pendingInit;
+        this.pendingInit = null;
+        this.revokeWorkerUrl();
+        pending?.resolve();
+        this.events.emit("ready", undefined);
+        break;
+      }
+      case "REPORT":
+        this.events.emit("status", { status: message.status });
+        break;
+      case "STREAM":
+        this.events.emit("stream", { chunk: message.chunk, progress: message.progress });
+        break;
+      case "DONE": {
+        const pending = this.pendingProcess;
+        if (!pending) break;
+        this.pendingProcess = null;
+        this.isProcessing = false;
+        const result: WebOCRResult = {
+          raw: message.text,
+          html: message.html,
+          markdown: message.markdown,
+          plainText: message.plainText,
+          json: message.json,
+          tables: message.tables,
+          overlays: message.overlays,
+        };
+        pending.resolve(result);
+        this.events.emit("complete", result);
+        break;
+      }
+      case "ERROR": {
+        const error = new Error(message.error);
+        if (this.pendingInit) this.failWorker(error);
+        else {
+          const pending = this.pendingProcess;
+          this.pendingProcess = null;
+          this.isProcessing = false;
+          pending?.reject(error);
+          this.events.emit("error", { message: error.message });
+        }
+        break;
+      }
+    }
+  }
+
+  private revokeWorkerUrl(): void {
+    if (this.workerBlobUrl !== null) URL.revokeObjectURL(this.workerBlobUrl);
+    this.workerBlobUrl = null;
+  }
+
+  private releaseWorker(error: Error): void {
+    const worker = this.worker;
+    this.worker = null;
+    this.isReady = false;
+    this.isProcessing = false;
+    this.pendingInit?.reject(error);
+    this.pendingInit = null;
+    this.pendingProcess?.reject(error);
+    this.pendingProcess = null;
+    this.initialization = null;
+    worker?.terminate();
+    this.revokeWorkerUrl();
+  }
+
+  private failWorker(error: Error): void {
+    this.releaseWorker(error);
+    this.events.emit("error", { message: error.message });
   }
 
   destroy(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-    this.isReady = false;
-    this.isProcessing = false;
+    this.releaseWorker(new Error("Client destroyed"));
     this.events.removeAllListeners();
   }
 
@@ -134,6 +189,12 @@ export class DoclingWebClient implements DoclingWeb {
   // Events
   // ============================================================================
 
+  /**
+   * Subscribe to synchronous notifications. During worker message dispatch, a
+   * thrown callback error reaches the browser's uncaught-error reporting and
+   * skips later callbacks for that notification; it does not fail OCR or terminate
+   * the worker. Async callback results and rejections are not awaited or handled.
+   */
   on<K extends keyof WebClientEvents>(
     event: K,
     callback: (data: WebClientEvents[K]) => void
@@ -176,70 +237,26 @@ export class DoclingWebClient implements DoclingWeb {
     }
 
     this.isProcessing = true;
-
-    try {
-      const src = await this.imageInputToDataUrl(input);
-
-      return await new Promise<WebOCRResult>((resolve, reject) => {
-        type ProcessHandlerMap = {
-          [K in WorkerMessageFromWorker["type"]]?: (
-            msg: Extract<WorkerMessageFromWorker, { type: K }>
-          ) => void;
-        };
-
-        const processHandlers: ProcessHandlerMap = {
-          REPORT: (msg) => {
-            this.events.emit("status", { status: msg.status });
-          },
-          STREAM: (msg) => {
-            this.events.emit("stream", {
-              chunk: msg.chunk,
-              progress: msg.progress,
-            });
-          },
-          DONE: (msg) => {
-            this.isProcessing = false;
-            const result: WebOCRResult = {
-              raw: msg.text,
-              html: msg.html,
-              markdown: msg.markdown,
-              plainText: msg.plainText,
-              json: msg.json,
-              tables: msg.tables,
-              overlays: msg.overlays,
-            };
-            this.events.emit("complete", result);
-            this.worker?.removeEventListener("message", handleMessage);
-            resolve(result);
-          },
-          ERROR: (msg) => {
-            this.isProcessing = false;
-            const error = { message: msg.error };
-            this.events.emit("error", error);
-            this.worker?.removeEventListener("message", handleMessage);
-            reject(new Error(msg.error));
-          },
-        };
-
-        const handleMessage = (event: MessageEvent<WorkerMessageFromWorker>) => {
-          const handler = processHandlers[event.data.type] as
-            | ((msg: WorkerMessageFromWorker) => void)
-            | undefined;
-          handler?.(event.data);
-        };
-
-        this.worker?.addEventListener("message", handleMessage);
-
-        this.worker?.postMessage({
-          type: "PROCESS_FILE",
-          src,
-          maxNewTokens: options?.maxNewTokens ?? this.config.maxNewTokens,
+    const worker = this.worker;
+    return new Promise<WebOCRResult>((resolve, reject) => {
+      const pending = { resolve, reject };
+      this.pendingProcess = pending;
+      void this.imageInputToDataUrl(input)
+        .then((src) => {
+          if (this.worker !== worker || this.pendingProcess !== pending) return;
+          worker.postMessage({
+            type: "PROCESS_FILE",
+            src,
+            maxNewTokens: options?.maxNewTokens ?? this.config.maxNewTokens,
+          });
+        })
+        .catch((error) => {
+          if (this.pendingProcess !== pending) return;
+          this.pendingProcess = null;
+          this.isProcessing = false;
+          reject(error);
         });
-      });
-    } catch (err) {
-      this.isProcessing = false;
-      throw err;
-    }
+    });
   }
 
   // ============================================================================
@@ -251,6 +268,20 @@ export class DoclingWebClient implements DoclingWeb {
     filename: string,
     options?: ConversionOptions
   ): Promise<ConvertDocumentResponse> {
+    const extension = filename.split(".").pop()?.toLowerCase();
+    if (
+      !extension ||
+      !["pdf", "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "avif", "svg"].includes(
+        extension
+      )
+    ) {
+      throw new Error(
+        `Unsupported web input format: ${extension ?? filename}. Use PDF or an image.`
+      );
+    }
+    if (options?.to_formats?.some((format) => format === "html_split_page")) {
+      throw new Error("html_split_page is not supported by the web client. Use html instead.");
+    }
     await this.ensureInitialized();
 
     const results = await this.processFilePages(file, filename);
@@ -340,9 +371,13 @@ export class DoclingWebClient implements DoclingWeb {
     // template literals. Using Function() ensures the import() only exists at
     // runtime inside the blob Worker context.
     const workerCode = [
-      "self.postMessage||0;", // ensure worker context
+      "const pending=[];",
+      "self.onmessage=event=>pending.push(event);",
       "const m='docling-sdk/web/worker';",
-      "Function('m','return import(m)')(m).catch(err=>{",
+      "Function('m','return import(m)')(m).then(()=>{",
+      "  const handle=self.onmessage;",
+      "  for(const event of pending)handle?.(event);",
+      "}).catch(err=>{",
       "  self.postMessage({type:'ERROR',error:err.message});",
       "});",
     ].join("");
@@ -358,7 +393,10 @@ export class DoclingWebClient implements DoclingWeb {
     const isPdf = ext === "pdf";
 
     if (isPdf) {
-      const data = typeof file === "string" ? this.base64ToUint8Array(file) : file;
+      const data =
+        typeof file === "string"
+          ? this.base64ToUint8Array(file.replace(/^data:application\/pdf;base64,/i, ""))
+          : file;
       const { renderPdfToImages } = await import("../web/pdf-renderer");
       const pages = await renderPdfToImages(data);
       const results: WebOCRResult[] = [];
@@ -396,18 +434,23 @@ export class DoclingWebClient implements DoclingWeb {
       results.length === 1 ? results[0]?.json : doclingToJson(combinedRaw, filename);
 
     return {
+      status: "success",
+      processing_time: 0,
       document: {
+        filename,
         md_content: combinedMarkdown,
         html_content: combinedHtml,
         text_content: combinedText,
-        json_content: combinedJson as unknown as Record<string, unknown>,
-        doc_tags: combinedRaw,
+        json_content:
+          combinedJson as unknown as ConvertDocumentResponse["document"]["json_content"],
+        doctags_content: combinedRaw,
+        ...{ doc_tags: combinedRaw },
       },
       errors: [],
       timings: {
         total: 0,
       },
-    } as unknown as ConvertDocumentResponse;
+    };
   }
 
   private async imageInputToDataUrl(input: ImageInput): Promise<string> {
@@ -416,6 +459,8 @@ export class DoclingWebClient implements DoclingWeb {
         return input;
       }
       const response = await fetch(input);
+      if (!response.ok)
+        throw new Error(`Image fetch failed: ${response.status} ${response.statusText}`);
       const blob = await response.blob();
       return this.blobToDataUrl(blob);
     }
