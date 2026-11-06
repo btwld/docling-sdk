@@ -16,7 +16,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const DOWNLOAD_TIMEOUT_MS = 600_000;
 const INSTALL_TIMEOUT_MS = 1_800_000;
@@ -426,7 +426,7 @@ async function main(args) {
 // Node resolves module symlinks, while argv retains the caller's spelling
 // (notably macOS /var -> /private/var). Importing remains setup-free.
 const invokedPath = process.argv[1] && await realpath(resolve(process.argv[1])).catch(() => undefined);
-if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
+if (invokedPath && invokedPath === await realpath(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`Native setup failed: ${error.message}\n`);
     process.exitCode = 1;
