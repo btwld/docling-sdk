@@ -29,7 +29,12 @@ conversion rejects with a configuration error until these are installed.
 ## Explicit setup
 
 Install Bubblewrap through your system administrator/package manager. The kernel
-must allow its namespaces and a **new private `/proc` mount**. The backend fails
+must allow its namespaces and a **new private `/proc` mount**. Ubuntu 24.04
+may require an administrator-managed AppArmor profile permitting user namespaces
+for `/usr/bin/bwrap`; installing the executable alone is insufficient. The CI
+fixture provisions that narrowly scoped profile without disabling the global
+unprivileged-user-namespace restriction. The SDK/setup script never changes
+AppArmor or kernel policy. The backend fails
 closed when these are unavailable; it does not use host procfs, disable isolation,
 change global environment, install a loader, or fall back to Python/HTTP.
 

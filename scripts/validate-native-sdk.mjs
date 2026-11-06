@@ -190,6 +190,24 @@ function modelExecutionEvidence(diagnostics, expected) {
   return Object.fromEntries(expected.map((stage) => [stage, stages.get(stage)]));
 }
 
+function tableFormerStructureEvidence(document) {
+  // Pinned assemble.rs:3466-3490 gives first-class cells only to successful
+  // TableFormer grids. json.rs emits their page-space bboxes; the geometric
+  // fallback's synthesized cells have no bbox, even with identical text/grid.
+  ensure(document.tables.length > 0, "tableformer-structured-table-required");
+  let cells = 0;
+  for (const table of document.tables) {
+    ensure(table.data.table_cells.length > 0, "tableformer-structured-cells-required");
+    for (const cell of table.data.table_cells) {
+      const box = cell.bbox;
+      ensure(box?.coord_origin === "TOPLEFT" && [box.l, box.t, box.r, box.b].every(Number.isFinite) &&
+        box.r > box.l && box.b > box.t, "tableformer-completed-structure-required");
+      cells++;
+    }
+  }
+  return { tables: document.tables.length, cells };
+}
+
 function refreshSandboxWork(sandboxArgs, work) {
   ensure(
     sandboxArgs?.includes("--unshare-all") && sandboxArgs.includes("--clearenv") &&
@@ -792,6 +810,7 @@ async function consumer(configPath) {
       const markdownBytes = await readFile(join(work, "output/source.md"));
       const document = JSON.parse(documentBytes.toString("utf8"));
       validateFixtureContent(document, markdownBytes.toString("utf8"), expectations);
+      const tableformerStructure = name === "original.pdf" ? tableFormerStructureEvidence(document) : undefined;
       ensure(
         JSON.stringify(Object.keys(document.pages).map(Number).sort((a, b) => a - b)) ===
           JSON.stringify(expectations.pages),
@@ -800,6 +819,7 @@ async function consumer(configPath) {
       ensure(sha256(await readFile(source)) === inputSha256, "model-execution-input-unchanged");
       return {
         stages, inputSha256, jsonContract,
+        ...(tableformerStructure ? { tableformerStructure } : {}),
         json: { bytes: documentBytes.length, sha256: sha256(documentBytes) },
         markdown: { bytes: markdownBytes.length, sha256: sha256(markdownBytes) },
         processReceipt: `${label}-process.json`,
@@ -862,7 +882,7 @@ async function consumer(configPath) {
         isolationHost: {
           userNamespacePolicy: await readFile("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "utf8").then((value) => value.trim(), () => "not-present"),
           processSecurityProfile: await readFile("/proc/self/attr/current", "utf8").then((value) => value.trim(), () => "not-present"),
-          bubblewrapAppArmorProfilePresent: await exists("/etc/apparmor.d/bwrap"),
+          bubblewrapAppArmorProfilePresent: await exists("/etc/apparmor.d/bwrap") || await exists("/etc/apparmor.d/docling-native-ci-bwrap"),
         },
       });
       const numeric = (value) => Number(value.split(".")[0]) * 1000 + Number(value.split(".")[1]);

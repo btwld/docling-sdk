@@ -30,7 +30,19 @@ jobs:
       - name: Install explicit Linux isolation and fixture prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends bubblewrap libstdc++6 python3-venv
+          sudo apt-get install --yes --no-install-recommends bubblewrap apparmor libstdc++6 python3-venv
+          # Ubuntu 24.04 restricts unprivileged user namespaces. Permit the
+          # administrator-installed sandbox launcher specifically; keep the
+          # global restriction and the SDK's namespace/capability policy intact.
+          sudo tee /etc/apparmor.d/docling-native-ci-bwrap >/dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile docling-native-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /etc/apparmor.d/docling-native-ci-bwrap
+          test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1
           mkdir -p "$NATIVE_EVIDENCE/package"
           python3 -m venv "$NATIVE_EVIDENCE/venv"
           "$NATIVE_EVIDENCE/venv/bin/python" -m pip install --disable-pip-version-check -r tests/fixtures/native-validation/requirements.txt

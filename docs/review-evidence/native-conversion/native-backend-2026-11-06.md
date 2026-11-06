@@ -54,7 +54,9 @@ merge, custom native ABI, TypeScript-to-Dart dependency or implicit setup.
   review showed geometric fallback could satisfy the simple table checks. The
   real-runtime gate now additionally requires positive layout, OCR detector/recognizer
   and TableFormer encoder/decoder/bbox execution timings in the same sandbox,
-  clean diagnostics and valid content. Retained positive/fallback/error controls
+  clean diagnostics and valid content. A follow-up review caught silent terminal
+  inference failure despite timings; the gate additionally requires first-class
+  PDF table-cell geometry that the pinned geometric fallback cannot emit. Retained positive/fallback/error controls
   exercise this validator; only compatible live CI can establish the final pass.
 - **macOS setup CLI path aliases.** Packed-consumer CI found that the import/main
   guard compared a real module path to a symlink-spelled argv path and did nothing.
@@ -89,6 +91,13 @@ the pinned upstream `models.json`/`export_record.json`. License/notice downloads
 also include the exact engine MIT license and ONNX Runtime 1.31 project license
 and third-party notices. This is not an independently reconstructed binary SBOM.
 No executable/model/font bytes are included in the npm artifact.
+
+The first compatible Ubuntu CI runs verified all downloads and fixture
+reproducibility but failed closed before inference: Ubuntu AppArmor denied
+Bubblewrap network-namespace setup (`Failed RTM_NEWADDR`). The CI fixture now
+provisions a profile for the exact administrator-installed `/usr/bin/bwrap`,
+leaving the global restriction enabled. Neither SDK nor setup changes host
+security policy. Those failed runs remain evidence, not conversion passes.
 
 ### Recorded local checks
 
