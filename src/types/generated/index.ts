@@ -10,7 +10,7 @@
  *
  * // Access via namespace
  * type ConvertEndpoint = OpenAPI.paths['/v1/convert/source'];
- * type TaskStatus = OpenAPI.components['schemas']['TaskStatus'];
+ * type TaskStatus = OpenAPI.components['schemas']['TaskStatusResponse'];
  * ```
  */
 

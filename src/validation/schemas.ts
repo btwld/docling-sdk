@@ -129,7 +129,7 @@ export const ImageExportModeSchema = z.enum(["embedded", "placeholder", "referen
   error: "Invalid image export mode. Supported modes: embedded, placeholder, referenced",
 });
 
-export const ProcessingPipelineSchema = z.enum(["standard", "vlm", "asr" ], {
+export const ProcessingPipelineSchema = z.enum(["standard", "vlm", "asr"], {
   error: "Invalid processing pipeline. Supported pipelines: standard, vlm, asr",
 });
 
@@ -145,6 +145,14 @@ export const TaskStatusSchema = z.enum(["pending", "started", "success", "failur
  */
 export const ConversionOptionsSchema = z
   .object({
+    from_formats: z.array(InputFormatSchema).optional(),
+    pipeline: ProcessingPipelineSchema.optional(),
+    ocr_lang: z.array(z.string().min(1)).optional(),
+    chunking_use_markdown_tables: z.boolean().optional(),
+    chunking_include_raw_text: z.boolean().optional(),
+    chunking_max_tokens: z.number().int().positive().nullable().optional(),
+    chunking_tokenizer: z.string().optional(),
+    chunking_merge_peers: z.boolean().optional(),
     to_formats: z
       .array(OutputFormatSchema, {
         error: "to_formats must be an array of valid output formats",
@@ -313,12 +321,14 @@ export const ConversionOptionsSchema = z
     picture_description_local: z
       .object({
         repo_id: z.string(),
-        prompt: z.string(),
-        scale: z.number(),
-        response_format: z.enum(["doctags", "markdown"]),
-        inference_framework: z.enum(["transformers", "mlx"]),
-        transformers_model_type: z.enum(["automodel-vision2seq", "automodel"]),
-        extra_generation_config: z.record(z.string(), z.unknown()),
+        prompt: z.string().optional(),
+        generation_config: z.record(z.string(), z.unknown()).optional(),
+        // Retain previously accepted configuration keys for compatibility.
+        scale: z.number().optional(),
+        response_format: z.enum(["doctags", "markdown"]).optional(),
+        inference_framework: z.enum(["transformers", "mlx"]).optional(),
+        transformers_model_type: z.enum(["automodel-vision2seq", "automodel"]).optional(),
+        extra_generation_config: z.record(z.string(), z.unknown()).optional(),
       })
       .optional(),
 
@@ -354,11 +364,61 @@ export const ConversionOptionsSchema = z
  * CLI convert options schema
  */
 export const CliConvertOptionsSchema = ConversionOptionsSchema.extend({
-  sources: z.array(z.string()).min(1, { error: "At least one source is required" }),
+  sources: z.array(z.string().min(1)).min(1, { error: "At least one source is required" }),
+  fromFormats: z.array(InputFormatSchema).optional(),
+  toFormats: z.array(OutputFormatSchema).min(1).optional(),
+  vlmModel: z.enum(["smoldocling", "granite_vision", "smolvlm"]).optional(),
+  asrModel: z
+    .enum([
+      "whisper_tiny",
+      "whisper_small",
+      "whisper_medium",
+      "whisper_large",
+      "whisper_base",
+      "whisper_turbo",
+    ])
+    .optional(),
+  ocr: z.boolean().optional(),
+  forceOcr: z.boolean().optional(),
+  ocrEngine: OcrEngineSchema.optional(),
+  ocrLang: z.array(z.string().min(1)).optional(),
+  pdfBackend: PdfBackendSchema.optional(),
+  tableMode: TableModeSchema.optional(),
+  imageExportMode: ImageExportModeSchema.optional(),
+  showLayout: z.boolean().optional(),
+  enrichCode: z.boolean().optional(),
+  enrichFormula: z.boolean().optional(),
+  enrichPictureClasses: z.boolean().optional(),
+  enrichPictureDescriptions: z.boolean().optional(),
+  pictureDescriptionAreaThreshold: z.number().min(0).max(1).optional(),
+  abortOnError: z.boolean().optional(),
+  documentTimeout: z.number().positive().optional(),
+  numThreads: z.number().int().positive().optional(),
+  device: AcceleratorDeviceSchema.optional(),
+  artifactsPath: z.string().optional(),
+  allowExternalPlugins: z.boolean().optional(),
+  enableRemoteServices: z.boolean().optional(),
+  showExternalPlugins: z.boolean().optional(),
+  debugVisualizeCells: z.boolean().optional(),
+  debugVisualizeOcr: z.boolean().optional(),
+  debugVisualizeLayout: z.boolean().optional(),
+  debugVisualizeTables: z.boolean().optional(),
+  headers: z
+    .string()
+    .refine((value) => {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        return z.record(z.string(), z.string()).safeParse(parsed).success;
+      } catch {
+        return false;
+      }
+    }, "headers must be a JSON object with string values")
+    .optional(),
+  // Legacy snake-case fields remain accepted; new callers use CliConvertOptions.
   input: z.string().optional(),
   output: z.string().optional(),
   from_formats: z.array(InputFormatSchema).optional(),
-  verbose: z.boolean().optional(),
+  verbose: z.union([z.number().int().nonnegative(), z.boolean()]).optional(),
   quiet: z.boolean().optional(),
   debug: z.boolean().optional(),
   config: z.string().optional(),

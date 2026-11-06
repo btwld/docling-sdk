@@ -141,13 +141,13 @@ export function createWebClient(
  *
  * @example
  * ```typescript
- * const client = createAPIClient('http:
+ * const client = createAPIClient('http://localhost:5001', {
  *   timeout: 30000,
  *   retries: 3,
  *   headers: { 'Authorization': 'Bearer token' }
  * });
  *
- * await client.convertFromUrl('https:
+ * await client.convertFromUrl('https://example.com/report.pdf');
  * ```
  */
 export function createAPIClient(
