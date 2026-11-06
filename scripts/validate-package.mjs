@@ -20,6 +20,9 @@ async function runNpm(args, cwd) {
 }
 const packed = JSON.parse((await runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", directory], root)).stdout)[0];
 const tarball = join(directory, packed.filename);
+assert(packed.files.some((file) => file.path === "dist/native.js"));
+assert(packed.files.some((file) => file.path === "scripts/prepare-native-runtime.mjs"));
+assert(!packed.files.some((file) => /\.(?:onnx|ttf|otf)$|(?:^|\/)docling-rs$/.test(file.path)), "npm must not contain native binaries or model/font assets");
 const requests = [];
 const browserResources = new Map();
 const server = createServer((request, response) => {
@@ -53,6 +56,10 @@ import * as cli from ${JSON.stringify(`${packageName}/cli`)};
 import * as browser from ${JSON.stringify(`${packageName}/browser`)};
 import * as web from ${JSON.stringify(`${packageName}/web`)};
 import * as platform from ${JSON.stringify(`${packageName}/platform`)};
+import { createNativeClient, nativeRuntimeManifest } from ${JSON.stringify(`${packageName}/native`)};
+assert.equal(typeof createNativeClient, "function");
+assert.equal(nativeRuntimeManifest.engine.version, "2.53.1");
+assert.equal("createNativeClient" in platform, false);
 assert.equal(typeof cli.CliUtils, "function");
 assert.equal(typeof web.createWebClient, "function");
 assert.equal(typeof platform.createAPIClient, "function");
@@ -77,11 +84,13 @@ console.log("Packed imports, subprocess execution and real HTTP calls passed");
 `;
     await writeFile(join(consumer, "check.mjs"), check);
     const result = await exec(process.execPath, ["check.mjs"], { cwd: consumer });
+    const setupHelp = await exec(process.execPath, [join(consumer, "node_modules", packageName, "scripts/prepare-native-runtime.mjs"), "--help"], { cwd: consumer });
+    assert.match(setupHelp.stdout, /Explicitly download and verify/);
     const browserSource = join(consumer, "browser.js");
     await writeFile(browserSource, `import { createAPIClient } from ${JSON.stringify(packageName)}; import { createWebClient } from ${JSON.stringify(`${packageName}/web`)}; globalThis.doclingSmoke = { createAPIClient, createWebClient };`);
     const bundle = await build({ entryPoints: [browserSource], bundle: true, platform: "browser", format: "esm", write: false, metafile: true, external: ["@huggingface/transformers", "onnxruntime-web", "unpdf"] });
     const inputs = Object.keys(bundle.metafile.inputs);
-    assert(!inputs.some((path) => /(?:process-runner|cli-client|node_modules\/(?:fflate|archiver|ws)\/)/.test(path)), "Browser bundle pulled in a Node-only implementation");
+    assert(!inputs.some((path) => /(?:process-runner|cli-client|native\/|node_modules\/(?:fflate|archiver|ws)\/)/.test(path)), "Browser bundle pulled in a Node-only implementation");
     if (process.env.DOCLING_TEST_CHROME && !omitOptional) {
       browserResources.set("/browser.js", { type: "text/javascript", body: bundle.outputFiles[0].text });
       browserResources.set("/browser.html", { type: "text/html", body: `<!doctype html><body>pending<script type="module">
@@ -109,6 +118,9 @@ try {
     await writeFile(join(consumer, "types.ts"), `
 import { createAPIClient, createCLIClient } from ${JSON.stringify(packageName)};
 import type { OpenAPI, ConversionOptions } from ${JSON.stringify(packageName)};
+import { createNativeClient } from ${JSON.stringify(`${packageName}/native`)};
+const native = createNativeClient({ executable: "/runtime/docling-rs", modelDirectory: "/runtime/models" });
+void native.convertFile("input.pdf", { outputDirectory: "./output", formats: ["md", "json"] });
 import { createAPIClient as browserAPI } from ${JSON.stringify(`${packageName}/browser`)};
 type ConvertEndpoint = OpenAPI.paths["/v1/convert/source"]["post"];
 type TaskStatus = OpenAPI.components["schemas"]["TaskStatusResponse"];

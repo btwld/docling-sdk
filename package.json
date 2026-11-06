@@ -1,7 +1,7 @@
 {
   "name": "docling-sdk",
   "version": "2.0.7",
-  "description": "TypeScript clients for Docling Serve, the local Python CLI, and browser OCR.",
+  "description": "TypeScript clients for Docling Serve, the local Python CLI, browser OCR, and optional isolated Rust conversion.",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -34,13 +34,18 @@
     "./platform": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./native": {
+      "types": "./dist/native-entry.d.ts",
+      "node": "./dist/native.js"
     }
   },
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts/prepare-native-runtime.mjs"
   ],
   "sideEffects": [
     "./dist/web-worker.js"
