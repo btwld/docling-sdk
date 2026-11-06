@@ -11,6 +11,7 @@ import {
   mkdtemp,
   open,
   readFile,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -422,7 +423,10 @@ async function main(args) {
   }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+// Node resolves module symlinks, while argv retains the caller's spelling
+// (notably macOS /var -> /private/var). Importing remains setup-free.
+const invokedPath = process.argv[1] && await realpath(resolve(process.argv[1])).catch(() => undefined);
+if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
   main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`Native setup failed: ${error.message}\n`);
     process.exitCode = 1;

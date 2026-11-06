@@ -231,6 +231,18 @@ async function waitReady(child: ChildProcess) {
 }
 
 describe("explicit reviewed native setup CLI", () => {
+  it("runs when invoked through a symlinked path, including macOS temporary-directory aliases", async () => {
+    const alias = join(root, "setup-alias.mjs");
+    await symlink(script, alias);
+    const result = spawnSync(process.execPath, [alias, "--help"], {
+      env: { PATH: "/usr/bin:/bin" },
+      timeout: 5000,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(result.stdout.toString()).toContain("Explicitly download and verify");
+    await assertClean();
+  });
   it("installs a verified tiny archive and closed asset inventory from the packaged manifest", async () => {
     const result = await run();
     expect(result.code, result.stderr).toBe(0);
