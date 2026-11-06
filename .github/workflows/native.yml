@@ -18,7 +18,7 @@ jobs:
       matrix:
         runtime: [18, 24]
     env:
-      NATIVE_EVIDENCE: ${{ runner.temp }}/native-validation-${{ matrix.runtime }}
+      NATIVE_EVIDENCE: ${{ github.workspace }}/.context/native-ci-${{ matrix.runtime }}
     steps:
       - uses: actions/checkout@v6
       # Build tooling uses current Node; the installed packed consumer below is
