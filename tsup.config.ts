@@ -18,7 +18,7 @@ export default defineConfig([
     outDir: "dist",
     treeshake: true,
     bundle: true,
-    external: ["ws", "archiver", "zod"],
+    external: ["ws", "fflate", "zod"],
     esbuildOptions(options) {
       options.banner = {
         js: '"use strict";',
