@@ -128,7 +128,8 @@
   },
   "optionalDependencies": {
     "ws": "^8.21.3",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "saxes": "^6.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
