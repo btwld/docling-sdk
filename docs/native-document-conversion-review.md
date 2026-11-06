@@ -1,15 +1,16 @@
 # Native document conversion: design and reference review
 
-Status: native design proposed. Source review supplied by Leo on 2026-10-28,
+Status: historical native design; implemented in the unmerged native PR stack.
+Source review supplied by Leo on 2026-10-28,
 reproduced in the cloud workspace on 2026-10-29. Correctness implementation
 started on 2026-11-03; see the implementation record below for validation and
 remaining gates. This document does not authorize publication or changing the
 Python default.
 
-**Latest delivery record:** [SDK hardening and validation, 2026-11-06](review-evidence/native-conversion/release-hardening-2026-11-06.md).
+**Latest delivery records:** [existing SDK hardening](review-evidence/native-conversion/release-hardening-2026-11-06.md) and [optional native backend](review-evidence/native-conversion/native-backend-2026-11-06.md).
 The baseline and earlier implementation records below are historical: later work
 does include isolated Python/models, real Serve and packed-consumer validation.
-The native backend remains proposed; this record does not assert a release or merge.
+The native implementation is additive; this historical record does not assert a release or merge.
 
 ## Recommendation
 

@@ -2,6 +2,8 @@
 
 [Home](../README.md) > [Docs](./README.md) > Examples
 
+For the optional native backend, use [the native example](../examples/07-native-client.ts) after [explicit runtime setup](native-client.md#explicit-setup). It does not install components or select a backend implicitly.
+
 The `examples/` directory contains runnable scripts demonstrating SDK features.
 
 ## Running Examples

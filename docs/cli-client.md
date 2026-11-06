@@ -2,6 +2,8 @@
 
 [Home](../README.md) > [Docs](./README.md) > CLI Client
 
+This guide covers the existing **Python** CLI. The optional [Rust native client](native-client.md) has a separate import, installation, result and error contract; selecting it is explicit.
+
 The CLI client wraps the Python [Docling](https://github.com/DS4SD/docling) command-line tool. It runs conversions locally without a server, with support for batch processing, directory watching, file validation and isolated conversion jobs.
 
 ## Prerequisites

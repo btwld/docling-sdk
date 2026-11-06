@@ -2,6 +2,8 @@
 
 [Home](../README.md) > [Docs](./README.md) > TypeScript
 
+Native types (`NativeClient`, `NativeConversionResult`, `NativeRuntimeManifest`) are exported only from `docling-sdk/native`. They do not extend the broad shared client type; upstream JSON remains runtime-validated data, not a TypeScript completeness guarantee. See the [native contract](native-client.md).
+
 The SDK uses TypeScript strict mode. Its public API types are maintained in
 `src/types/api.ts`, with client interfaces in `src/types/client.ts`.
 

@@ -12,6 +12,7 @@ Client capabilities and transfer behavior vary by runtime.
 |---|---|
 | `docling-sdk` | Node/Bun/Deno main build; browser-aware bundlers select the browser build |
 | `docling-sdk/cli` | Node CLI client and helpers |
+| `docling-sdk/native` | Optional Node-only Linux x64 Rust executable adapter; never bundled into API/browser imports |
 | `docling-sdk/browser` | API and Web client factories, excluding the Node CLI; no `Docling` factory |
 | `docling-sdk/web` | Browser OCR and standalone DocTags/cache/PDF utilities |
 | `docling-sdk/web/worker` | Worker inference script, with initialization side effects |

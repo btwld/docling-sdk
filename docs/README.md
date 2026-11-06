@@ -23,6 +23,7 @@ records the local-backend findings, evidence and implementation gates.
 | [API Client](./api-client.md) | Full guide for the HTTP client connecting to Docling Serve |
 | [CLI Client](./cli-client.md) | Guide for the Python CLI wrapper with batch and watch support |
 | [Web Client](./web-client.md) | Browser-based OCR using the IBM Granite Docling model |
+| [Native Client](./native-client.md) | Optional isolated Rust executable, verified models, local PDF/DOCX/PPTX |
 
 ## Feature Guides
 

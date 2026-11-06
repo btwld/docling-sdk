@@ -2,6 +2,8 @@
 
 [Home](../README.md) > [Docs](./README.md) > API Reference
 
+The optional [native reference](native-client.md) covers `createNativeClient`, `checkRuntime` and `convertFile` from `docling-sdk/native`. It deliberately does not implement the broad API/CLI/Web interface.
+
 Method-by-method reference for all three client types. Browser entry exports
 differ from the Node main factory; see [entry points](cross-runtime.md#entry-points).
 For nested safe file results, see [error handling](error-handling.md#result-pattern);

@@ -14,7 +14,8 @@ Integration tests need external services; file presence is not coverage.
 
 ## Preserve contracts
 
-- Keep Node-only CLI imports out of `src/browser-entry.ts` and Web paths.
+- Keep Node-only CLI/native imports out of `src/browser-entry.ts` and Web paths.
+- Native execution is opt-in through `docling-sdk/native`; do not change Python defaults, trust floating runtime/model versions, or weaken the sandbox when unavailable.
 - Check `package.json` exports when changing public symbols or entry points.
 - `src/types/api.ts` is the manual SDK contract; check schemas and adapters too.
 - OpenAPI types come from a pinned Serve schema; raw types do not imply SDK feature parity.

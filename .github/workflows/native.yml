@@ -1,0 +1,78 @@
+name: Native SDK (real Linux runtime)
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packed-native:
+    name: Ubuntu 24.04 x64 / Node ${{ matrix.runtime }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [18, 24]
+    env:
+      NATIVE_EVIDENCE: ${{ runner.temp }}/native-validation-${{ matrix.runtime }}
+    steps:
+      - uses: actions/checkout@v6
+      # Build tooling uses current Node; the installed packed consumer below is
+      # executed with each supported runtime, including Node 18.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install explicit Linux isolation and fixture prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap libstdc++6 python3-venv
+          mkdir -p "$NATIVE_EVIDENCE/package"
+          python3 -m venv "$NATIVE_EVIDENCE/venv"
+          "$NATIVE_EVIDENCE/venv/bin/python" -m pip install --disable-pip-version-check -r tests/fixtures/native-validation/requirements.txt
+          "$NATIVE_EVIDENCE/venv/bin/python" -m pip freeze > "$NATIVE_EVIDENCE/python-dependencies.txt"
+      - run: npm ci
+      - run: npm run build
+      - name: Pack the actual npm artifact without lifecycle hooks
+        run: npm pack --ignore-scripts --json --pack-destination "$NATIVE_EVIDENCE/package" > "$NATIVE_EVIDENCE/pack.json"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.runtime }}
+      - name: Validate real packed SDK, private procfs and live no-egress
+        timeout-minutes: 50
+        # The validator imports from a temporary npm consumer before running the
+        # PACKED prepare-native-runtime.mjs once. Downloads never happen in SDK
+        # startup or conversion. A namespace/mount denial FAILS this job.
+        run: |
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          const evidence = process.env.NATIVE_EVIDENCE;
+          const [packed] = JSON.parse(await readFile(join(evidence, 'pack.json'), 'utf8'));
+          const child = spawnSync(process.execPath, [
+            'scripts/validate-native-sdk.mjs',
+            '--tarball', join(evidence, 'package', packed.filename),
+            '--python', join(evidence, 'venv/bin/python'),
+            '--output', join(evidence, 'sdk'),
+          ], { stdio: 'inherit', timeout: 2_910_000 });
+          process.exitCode = child.status ?? 1;
+          JS
+      - name: Retain bounded receipts even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-x64-node-${{ matrix.runtime }}
+          if-no-files-found: warn
+          retention-days: 14
+          # No runtime/models, environment dumps, command lines or document data.
+          path: |
+            ${{ env.NATIVE_EVIDENCE }}/pack.json
+            ${{ env.NATIVE_EVIDENCE }}/python-dependencies.txt
+            ${{ env.NATIVE_EVIDENCE }}/sdk/*.json
+            ${{ env.NATIVE_EVIDENCE }}/sdk/*.jsonl
+            ${{ env.NATIVE_EVIDENCE }}/sdk/fixtures/fixtures.json
