@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "id": "docling-rs-2.53.1-linux-x64-cpu-v1",
+  "engine": {
+    "name": "docling-rs",
+    "version": "2.53.1",
+    "commit": "f6012c104ab395e97415b0b078e7aee9e4df4bf1"
+  },
+  "platform": "linux",
+  "architecture": "x64",
+  "minimumGlibc": "2.39",
+  "executable": {
+    "path": "docling-rs",
+    "size": 71147720,
+    "sha256": "e3588cb236b64fe4dc5aedf14658295a8778ecc45184366e1da23ef660aea9da",
+    "license": "MIT",
+    "archive": {
+      "url": "https://github.com/docling-project/docling.rs/releases/download/v2.53.1/docling-rs-v2.53.1-x86_64-unknown-linux-gnu.tar.gz",
+      "size": 26600611,
+      "sha256": "f59f647e7c4d6741c4df810c48d825412e55d946cc3ef0c66138b2f8a1a262c3"
+    }
+  },
+  "assets": [
+    {
+      "path": "layout_heron.onnx",
+      "size": 172208540,
+      "sha256": "4f6125ab049d2844c85f13f3d9db527c6aeee88e5da2cf15e08379d456ad55d2",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/layout_heron.onnx",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "ocr_det.onnx",
+      "size": 9929594,
+      "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/ocr_det.onnx",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "ocr_rec_v6.onnx",
+      "size": 21234383,
+      "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/ocr_rec_v6.onnx",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "ocr_rec_v6_dict.txt",
+      "size": 74947,
+      "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/ocr_rec_v6_dict.txt",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "tableformer/encoder_fp16.onnx",
+      "size": 54040666,
+      "sha256": "3fb23e039b635ad34ac8a8984d9521e6bb596bd8bac2be1ce16b02deb4fb52d8",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/encoder_fp16.onnx",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0"
+    },
+    {
+      "path": "tableformer/decoder_kv_layers.onnx",
+      "size": 248935,
+      "sha256": "59846d2639dff5d18c2d356c77f629465d9dde8c63ab48d39a92d32609e94a99",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/decoder_kv_layers.onnx",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0"
+    },
+    {
+      "path": "tableformer/decoder_kv.onnx.data",
+      "size": 115580928,
+      "sha256": "e71523a8b7603f983088b04c9d5cb4203be117e4a0e5950028ae46a9e98103eb",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/decoder_kv.onnx.data",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0"
+    },
+    {
+      "path": "tableformer/bbox.onnx",
+      "size": 52234,
+      "sha256": "a3cd88ae198bd8ae3338fbb89cf2f054474c964ae5001611727db7240eaf1125",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/bbox.onnx",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0"
+    },
+    {
+      "path": "tableformer/bbox.onnx.data",
+      "size": 39618560,
+      "sha256": "e936773730de30a2d10528f69e064fd9fd222259aa65078c421f3186b5b7e36a",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/bbox.onnx.data",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0"
+    },
+    {
+      "path": "MODELS_NOTICE.md",
+      "size": 11459,
+      "sha256": "2b334a854da0ebe7eb0a64be71233a61b73ee39e3cd77a71b71f2809913fc526",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/MODELS_NOTICE.md",
+      "license": "notice"
+    },
+    {
+      "path": "licenses/LICENSE-Apache-2.0.txt",
+      "size": 10280,
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/LICENSE-Apache-2.0.txt",
+      "license": "notice"
+    },
+    {
+      "path": "licenses/LICENSE-CDLA-Permissive-2.0.txt",
+      "size": 2354,
+      "sha256": "4531a67d443284d93ffed0803df5b10634aff21c3d77e381f2d48af01d875868",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/LICENSE-CDLA-Permissive-2.0.txt",
+      "license": "notice"
+    },
+    {
+      "path": "licenses/LICENSE-docling-rs.txt",
+      "size": 1071,
+      "sha256": "35751e32194868f473a12681011d9efef674ac9be4861974eadbb2c4f7ddd30a",
+      "url": "https://raw.githubusercontent.com/docling-project/docling.rs/f6012c104ab395e97415b0b078e7aee9e4df4bf1/LICENSE",
+      "license": "MIT"
+    },
+    {
+      "path": "models.json",
+      "size": 54178,
+      "sha256": "ffe84af6729843fc6666a77c628b801c6170b655858651e509081430f84dd740",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/models.json",
+      "license": "notice"
+    },
+    {
+      "path": "export_record.json",
+      "size": 26883,
+      "sha256": "903740ec555190a59b9f11d4d679e2cc72d6625c04860a1065e65fccc036e029",
+      "url": "https://github.com/docling-project/docling.rs/releases/download/models-v1/export_record.json",
+      "license": "notice"
+    },
+    {
+      "path": "fonts/NotoSans-Regular.ttf",
+      "size": 569208,
+      "sha256": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSans-Bold.ttf",
+      "size": 575740,
+      "sha256": "c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Bold.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSans-Italic.ttf",
+      "size": 552776,
+      "sha256": "36cff144df01309dab648bea71baff9bb074026914afe63aeacc8bc90b67a28b",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Italic.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSans-BoldItalic.ttf",
+      "size": 555292,
+      "sha256": "6edf4227ef0fa846aca70e86a307804ca4401741830f5b3af0f2554abe2b8466",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-BoldItalic.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSerif-Regular.ttf",
+      "size": 616196,
+      "sha256": "c8f669ceb2c9c60ccf55198b305e08a997ffca79a38cc7eeb551e643cbe66505",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSerif-Bold.ttf",
+      "size": 638164,
+      "sha256": "3b2086a869bcded2aeb4416fc281ceec9d6ce3c06756cda19f8f763636204e7d",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSerif/NotoSerif-Bold.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSerif-Italic.ttf",
+      "size": 657092,
+      "sha256": "0ea81d6b54fc8aa5dff0fd6ebe7cfa431e9e6cf747a8d4aa33581fa0aaccffea",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSerif/NotoSerif-Italic.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/NotoSerif-BoldItalic.ttf",
+      "size": 675428,
+      "sha256": "4fb8737145b4a503d548af4b517afdfc532e44a96ac15378257e825741334eec",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSerif/NotoSerif-BoldItalic.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/LiberationMono-Regular.ttf",
+      "size": 512836,
+      "sha256": "d9e2b23d19f8230be7146f409a52b1d23117e635e28f2e2892cf91b7382f325b",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansMono/NotoSansMono-Regular.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/LiberationMono-Bold.ttf",
+      "size": 525664,
+      "sha256": "beb857bd799a114de7d5d90cc75cc69f4b6ee8d401f4ab20697e6f9719a66dfc",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansMono/NotoSansMono-Bold.ttf",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "fonts/OFL.txt",
+      "size": 4377,
+      "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/LICENSE",
+      "license": "OFL-1.1"
+    },
+    {
+      "path": "licenses/LICENSE-onnxruntime.txt",
+      "size": 1073,
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/402979ac1bef89dcd55add41eaa7277c407599eb/LICENSE",
+      "license": "MIT"
+    },
+    {
+      "path": "licenses/ThirdPartyNotices-onnxruntime.txt",
+      "size": 338088,
+      "sha256": "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3",
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/402979ac1bef89dcd55add41eaa7277c407599eb/ThirdPartyNotices.txt",
+      "license": "notice"
+    }
+  ]
+}
