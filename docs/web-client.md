@@ -34,11 +34,14 @@ WebGPU is the recommended backend for best performance. If WebGPU is unavailable
 
 ```typescript
 import { createWebClient } from "docling-sdk/web";
+import workerUrl from "docling-sdk/web/worker?worker&url";
 
-const client = createWebClient({ device: "webgpu" });
+const client = createWebClient({ device: "webgpu", workerUrl });
 ```
 
-For worker URL configuration, see [worker bundling](cross-runtime.md#browser-local-ocr-and-worker-bundling).
+This example uses Vite's worker URL import. Other bundlers must produce an
+equivalent module-worker URL. The legacy blob fallback is not a self-contained
+worker bundle; see [worker bundling](cross-runtime.md#browser-local-ocr-and-worker-bundling).
 
 ## Lifecycle
 

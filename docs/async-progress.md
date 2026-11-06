@@ -295,23 +295,28 @@ const ws = new DoclingWebSocketClient({
 
 The `AsyncTaskManager` handles task submission, polling, and event emission.
 Services create their own instances; there is no process-wide task registry.
-For the API client, `client.destroy()` clears the file service's task manager and
-its registered polling/timeout timers. It calls `ChunkService.destroy()`, but
-that method is currently empty: tasks registered with the chunk manager and
-their timers survive.
-Explicitly destroy the chunk service's manager when finished:
+For the API client, `client.destroy()` clears both the file and chunk task
+managers and their registered polling/timeout timers. Transport reconfiguration
+also destroys the old managers before replacing their services:
 
 ```typescript
-client.chunks.getTaskManager().destroy();
 client.destroy();
 ```
 
 `client.getTaskManager()` returns only the file service's manager; calling its
-`destroy()` does not clean up chunk tasks. Manager cleanup removes registered
-local tasks and timers; it does not abort in-flight HTTP requests or cancel
-server-side work. An in-flight poll can still schedule another timer after
-cleanup, so this is not a guarantee that all polling has stopped. A separately
-created progress tracker also needs `stopTracking()`.
+`destroy()` does not clean up chunk tasks. A separately used `ChunkService` owns
+its manager: call `chunkService.destroy()` to settle its pending waiters and stop
+local polling. Manager cleanup removes registered local tasks and timers.
+In-flight HTTP requests are not aborted and server-side work is not cancelled,
+but late poll responses cannot
+restart polling for a settled/destroyed task. A separately created progress
+tracker also needs `stopTracking()`.
+
+Each tracked task has its own completion promise. Multiple waiters and late
+waiters can retrieve the same terminal result; the latest 1,000 completions are
+retained per manager. Unknown or evicted task IDs resolve with a `Task not found`
+failure. Cancellation/destruction settles pending waiters instead of leaving
+them waiting for another task's event.
 
 Observe the file service manager through the client:
 

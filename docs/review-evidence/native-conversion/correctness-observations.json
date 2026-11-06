@@ -1,0 +1,124 @@
+{
+  "date": "2026-11-03",
+  "base_commit": "cd5830477be311c52497df65f32478f040c1eb0f",
+  "branch": "conductor/docling-sdk-native-backend",
+  "state": "uncommitted correctness implementation; native design remains proposed",
+  "runtime": {
+    "node": "v20.20.2",
+    "os": "Linux",
+    "architecture": "x64"
+  },
+  "checks": {
+    "typecheck": {
+      "command": [
+        "npm",
+        "run",
+        "typecheck",
+        "--",
+        "--incremental",
+        "false"
+      ],
+      "exit_code": 0
+    },
+    "lint": {
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "exit_code": 0
+    },
+    "build": {
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit_code": 0
+    },
+    "coverage": {
+      "command": [
+        "npm",
+        "run",
+        "test:coverage"
+      ],
+      "exit_code": 1
+    }
+  },
+  "unit_tests": {
+    "passed": 361,
+    "files_passed": 21,
+    "executed_by": "npm run test:coverage"
+  },
+  "coverage": {
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "**/*.d.ts"
+    ],
+    "threshold_percent": 80,
+    "total": {
+      "lines": {
+        "total": 10475,
+        "covered": 4785,
+        "skipped": 0,
+        "pct": 45.68
+      },
+      "statements": {
+        "total": 10475,
+        "covered": 4785,
+        "skipped": 0,
+        "pct": 45.68
+      },
+      "functions": {
+        "total": 682,
+        "covered": 310,
+        "skipped": 0,
+        "pct": 45.45
+      },
+      "branches": {
+        "total": 1262,
+        "covered": 870,
+        "skipped": 0,
+        "pct": 68.93
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    },
+    "cli_client_lines_percent": 65.84,
+    "gate_passed": false
+  },
+  "known_gates": [
+    "production coverage below 80% in all four metrics",
+    "six high-severity affected production dependency entries pending remediation",
+    "real Python/Rust engine and model verification absent",
+    "Node 18, macOS, Windows and packed consumers unverified"
+  ],
+  "dependency_entries": [
+    "brace-expansion",
+    "glob",
+    "lodash",
+    "minimatch",
+    "ws",
+    "zod"
+  ],
+  "worker_settings": {
+    "model": "gpt-6.1-sol",
+    "reasoning_effort": "high",
+    "requested_service_tier": "fast"
+  },
+  "native_backend_implemented": false,
+  "converter_or_models_installed": false,
+  "commit_push_pr_or_publication_performed": false,
+  "historical_evidence_preserved": true,
+  "final_integration_review": "Independent review found an additional batch cancellation caller gap; corrected and checked by primary source inspection plus isolated regressions. Original review reports retained.",
+  "preserved_adapter_limits": [
+    "convertMultipleFiles eagerly dispatches all files and represents cancellation as per-file failure results",
+    "throwing convertMultipleFiles progress callback may reject its aggregate before sibling conversions finish (source-only existing limitation; outside the batch fix)"
+  ]
+}

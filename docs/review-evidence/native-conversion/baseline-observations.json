@@ -1,0 +1,150 @@
+{
+  "purpose": "Historical evidence: passing probes reproduced defects in the unchanged baseline, not a correctness pass.",
+  "runtime_probes": {
+    "recordedAt": "2026-10-29T14:37:02.234Z",
+    "head": "5ae3517a57d3a803845f1c7d10aa6749c309a4e0",
+    "node": "v24.22.1",
+    "platform": "linux/x64",
+    "fixtureDirectory": ".context/native-review/probe-run-ktN4Cm",
+    "interpretation": "All seven probes reproduced baseline defects; this is not a correctness pass or native-engine test.",
+    "observations": [
+      {
+        "id": "R1",
+        "reproduced": true,
+        "observed": {
+          "literalFilename": "$(printf DOCLING_REVIEW_LITERAL).pdf",
+          "converterReceived": "DOCLING_REVIEW_LITERAL.pdf"
+        }
+      },
+      {
+        "id": "R2",
+        "reproduced": true,
+        "observed": [
+          {
+            "behavior": "fail",
+            "status": "success",
+            "documentKeys": [
+              "filename"
+            ],
+            "partialFailureEvents": 1,
+            "converterCalls": 1
+          },
+          {
+            "behavior": "empty",
+            "status": "success",
+            "documentKeys": [
+              "filename"
+            ],
+            "partialFailureEvents": 0,
+            "converterCalls": 1
+          },
+          {
+            "behavior": "mixed",
+            "status": "success",
+            "documentKeys": [
+              "filename",
+              "md_content"
+            ],
+            "partialFailureEvents": 1,
+            "converterCalls": 2
+          }
+        ]
+      },
+      {
+        "id": "R3",
+        "reproduced": true,
+        "observed": {
+          "newInput": "new-document.pdf",
+          "status": "success",
+          "returnedOtherDocument": true
+        }
+      },
+      {
+        "id": "R4",
+        "reproduced": true,
+        "observed": {
+          "aCompleted": true,
+          "bPendingAfterItsSuccessEvent": true,
+          "remainingListeners": {
+            "success": 0,
+            "failure": 2,
+            "timeout": 2,
+            "error": 2
+          }
+        }
+      },
+      {
+        "id": "R5-readiness",
+        "reproduced": true,
+        "observed": {
+          "available": false,
+          "initializeResolved": true,
+          "emittedReady": true
+        }
+      },
+      {
+        "id": "R5-signal",
+        "reproduced": true,
+        "observed": {
+          "control": {
+            "exitCode": null,
+            "signal": "SIGTERM"
+          },
+          "sdk": {
+            "success": true,
+            "exitCode": 0
+          }
+        }
+      },
+      {
+        "id": "R6",
+        "reproduced": true,
+        "observed": {
+          "requestedRetries": 0,
+          "directConfiguredRetries": 3,
+          "constructorHttpAttempts": 4,
+          "updateFromOneToZeroHttpAttempts": 2
+        }
+      }
+    ]
+  },
+  "coverage_gate_probe": {
+    "recordedAt": "2026-10-29T14:36:58.441Z",
+    "node": "v24.22.1",
+    "vitest": "2.1.9",
+    "fixtureDirectory": ".context/native-review/coverage-gate-367Mz9",
+    "observations": [
+      {
+        "mode": "nested-global",
+        "exitCode": 0,
+        "lines": 40,
+        "functions": 50
+      },
+      {
+        "mode": "direct",
+        "exitCode": 1,
+        "lines": 40,
+        "functions": 50
+      }
+    ],
+    "interpretation": "The nested gate accepted low coverage; direct thresholds rejected the identical fixture."
+  },
+  "clean_baseline_coverage": {
+    "aggregate": {
+      "lines": 23.17,
+      "branches": 56.62,
+      "functions": 27.07,
+      "statements": 23.17
+    },
+    "main_cli_client": {
+      "lines": 13.45,
+      "branches": 43.13,
+      "functions": 7.2,
+      "statements": 13.45
+    },
+    "unit_tests": 154,
+    "test_files": 14,
+    "exit_code": 0,
+    "scope": "Original Vitest configuration, including examples/scripts; clean git archive baseline."
+  }
+}

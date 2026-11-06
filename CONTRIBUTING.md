@@ -8,7 +8,9 @@ cd docling-sdk
 npm ci
 ```
 
-Use Node.js >=18; CI runs Node 20. Submit changes through a pull request to `main`.
+Use Node.js 20.19+ (or 22.12+) for the development toolchain. Published SDK
+runtime support remains Node.js >=18; TypeScript consumers need >=5.5.
+Submit changes through a pull request to `main`.
 
 ## Checks
 
@@ -17,17 +19,32 @@ Run the checks relevant to your change before opening a PR:
 ```bash
 npm run typecheck
 npm run lint
-npm test
+npm run openapi:check
+npm audit
+npm run test:coverage
 npm run build
+npm run validate:package
 ```
 
 Use Biome for formatting (`npm run format:fix`). See [package.json](package.json)
 for other scripts and [vitest.config.ts](vitest.config.ts) for test configuration.
 
-Unit tests live in `tests/unit/`. Integration tests live in `tests/integrations/`
-and require their external services. The S3 integration file currently contains
-commented examples, not an executable test suite. `npm test` runs unit tests;
-coverage is a separate `npm run test:coverage` command, not a CI coverage gate.
+Unit tests live in `tests/unit/`. Integration tests live in `tests/integration/`
+and require their external services. Set `DOCLING_TEST_SERVE_URL` and
+`DOCLING_TEST_FIXTURES` to run the real Serve suite; otherwise it explicitly skips.
+`npm test` runs unit tests. The old comment-only S3 scaffold has been removed.
+CI, release validation and `prepublishOnly` run `npm run test:coverage`,
+measuring `src/**/*.ts` and enforcing 80% for
+lines, branches, functions and statements. A passing unit suite alone does not
+establish that the coverage gate passes; the coverage command exits nonzero
+when any target is missed.
+
+CI exercises the toolchain on Node 20/22/24. Packed-consumer tests install both
+full and optional-dependency-free artifacts, compile declarations on the minimum
+TypeScript version, bundle browser imports and make loopback HTTP requests on
+Linux/macOS/Windows with Node 18/24. Runtime/model validation scripts under
+`scripts/validate-python*` are explicit opt-in operations with isolated caches;
+they do not run during installation or change the SDK backend.
 
 ## Changes and commit messages
 

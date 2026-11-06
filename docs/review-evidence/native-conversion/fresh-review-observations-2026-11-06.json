@@ -1,0 +1,134 @@
+{
+  "date": "2026-11-06",
+  "base_commit": "cd5830477be311c52497df65f32478f040c1eb0f",
+  "branch": "conductor/docling-sdk-native-backend",
+  "state": "uncommitted fresh-review corrections; native backend remains proposed",
+  "runtime": {
+    "node": "v20.20.2",
+    "os": "Linux",
+    "architecture": "x64",
+    "vitest": "2.1.9"
+  },
+  "checks": {
+    "typecheck": {
+      "command": [
+        "npm",
+        "run",
+        "typecheck",
+        "--",
+        "--incremental",
+        "false"
+      ],
+      "exit_code": 0
+    },
+    "lint": {
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "exit_code": 0
+    },
+    "coverage": {
+      "command": [
+        "npm",
+        "run",
+        "test:coverage"
+      ],
+      "exit_code": 1
+    },
+    "build": {
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit_code": 0
+    }
+  },
+  "unit_tests": {
+    "passed": 383,
+    "files_passed": 21,
+    "executed_by": "npm run test:coverage",
+    "added_since_2026_11_03": 22
+  },
+  "coverage": {
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "**/*.d.ts"
+    ],
+    "threshold_percent": 80,
+    "total": {
+      "lines": {
+        "total": 10461,
+        "covered": 4840,
+        "skipped": 0,
+        "pct": 46.26
+      },
+      "statements": {
+        "total": 10461,
+        "covered": 4840,
+        "skipped": 0,
+        "pct": 46.26
+      },
+      "functions": {
+        "total": 682,
+        "covered": 314,
+        "skipped": 0,
+        "pct": 46.04
+      },
+      "branches": {
+        "total": 1294,
+        "covered": 898,
+        "skipped": 0,
+        "pct": 69.39
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    },
+    "cli_client_lines_percent": 69.97,
+    "gate_passed": false
+  },
+  "pre_fix_evidence": {
+    "initial_failing_cases": 13,
+    "split_html_failing_cases": 4,
+    "logs_directory": ".context/fresh-review-2026-11-06"
+  },
+  "fixed_findings": [
+    "F1: destination-stream lifetime and finalization",
+    "F2: cleanup before throwing processing-error listeners",
+    "F3: canonical temporary root for downloads",
+    "F4: multi-file callback rejection waits for siblings",
+    "F5: per-batch output directory",
+    "F6: positive safe-integer batch concurrency",
+    "F7: API-key-only rotation and removal",
+    "F8: chunk-service-owned task-manager destruction",
+    "F9: split-page HTML mapping and validation"
+  ],
+  "known_gates": [
+    "production coverage below 80% in all four metrics",
+    "recheck and remediate affected production dependencies from previous audit; no new audit this pass",
+    "real Python converter and clean packed consumers on declared Node/OS matrix",
+    "approved pinned Rust executable/model manifest and real-engine validation before native implementation"
+  ],
+  "not_verified": [
+    "Node 18",
+    "macOS",
+    "Windows",
+    "real Python/Rust document conversion",
+    "models/OCR",
+    "browser engine",
+    "live Serve",
+    "packed consumers"
+  ],
+  "native_backend_implemented": false,
+  "converter_or_models_installed": false,
+  "commit_push_pr_or_publication_performed": false,
+  "agents_spawned_this_pass": 0
+}
