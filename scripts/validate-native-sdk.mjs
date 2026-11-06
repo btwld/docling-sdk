@@ -31,6 +31,17 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const safeCode = (error) =>
   /^[A-Z_0-9]+$/.test(error?.code ?? "") ? error.code : "VALIDATION_FAILED";
+function failureEvidence(error) {
+  const result = { code: safeCode(error), check: error.validationLabel ?? "operation-failed" };
+  // Only sandbox startup diagnostics: never document text, full command lines
+  // or inherited environments. Hash-only receipts otherwise hide host blockers.
+  for (let cause = error, depth = 0; cause && depth < 4; cause = cause.cause, depth++) {
+    if (typeof cause.stderr !== "string") continue;
+    const lines = cause.stderr.split(/\r?\n/).filter((line) => line.startsWith("bwrap: "));
+    if (lines.length) result.isolationDiagnostics = lines.join("\n").slice(0, 2048);
+  }
+  return result;
+}
 function ensure(condition, label) {
   if (!condition) {
     const error = new Error(label);
@@ -570,8 +581,7 @@ async function consumer(configPath) {
         name,
         status: "failed",
         elapsedMs: Date.now() - started,
-        code: safeCode(error),
-        check: error.validationLabel ?? "operation-failed",
+        ...failureEvidence(error),
       };
       summary.cases.push(receipt);
       await writeFile(ledger, `${JSON.stringify(receipt)}\n`, { flag: "a", mode: 0o600 });
@@ -849,6 +859,11 @@ async function consumer(configPath) {
         requiredGlibc: manifest.minimumGlibc,
         libstdcppPath: libstd,
         hasGLIBCXX_3_4_32: hasRequiredLibstd,
+        isolationHost: {
+          userNamespacePolicy: await readFile("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "utf8").then((value) => value.trim(), () => "not-present"),
+          processSecurityProfile: await readFile("/proc/self/attr/current", "utf8").then((value) => value.trim(), () => "not-present"),
+          bubblewrapAppArmorProfilePresent: await exists("/etc/apparmor.d/bwrap"),
+        },
       });
       const numeric = (value) => Number(value.split(".")[0]) * 1000 + Number(value.split(".")[1]);
       ensure(
@@ -1264,7 +1279,7 @@ async function consumer(configPath) {
     summary.status = "passed";
   } catch (error) {
     summary.status = "failed";
-    summary.failure = { code: safeCode(error), check: error.validationLabel ?? "operation-failed" };
+    summary.failure = failureEvidence(error);
     throw error;
   } finally {
     importGuard = false;
