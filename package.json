@@ -1,7 +1,7 @@
 {
   "name": "docling-sdk",
   "version": "2.0.7",
-  "description": "TypeScript SDK for Docling - Bridge between Python Docling ecosystem and JavaScript/TypeScript. Supports both CLI and API modes with dual publishing.",
+  "description": "TypeScript clients for Docling Serve, the local Python CLI, and browser OCR.",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -122,17 +122,17 @@
   "dependencies": {
     "mitt": "^3.0.1",
     "ofetch": "^1.4.1",
-    "zod": "^4.0.15"
+    "zod": "^4.6.7",
+    "chokidar": "^4.0.3"
   },
   "optionalDependencies": {
-    "archiver": "^7.0.1",
-    "ws": "^8.18.0"
+    "ws": "^8.21.3",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/lib-storage": "^3.0.0",
     "@biomejs/biome": "^1.9.4",
-    "@types/archiver": "^6.0.3",
     "@types/node": "^24.9.1",
     "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.8",
@@ -150,7 +150,7 @@
   "peerDependencies": {
     "@huggingface/transformers": ">=3.0.0",
     "onnxruntime-web": ">=1.18.0",
-    "typescript": ">=4.9.0",
+    "typescript": ">=5.5.0",
     "unpdf": ">=0.12.0"
   },
   "peerDependenciesMeta": {
