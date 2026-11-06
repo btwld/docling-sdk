@@ -1,9 +1,6 @@
 export { HttpClient } from "./http";
 export { DoclingAPIClient } from "../clients/api-client";
 
-// Note: ConnectionPool is deprecated in favor of cross-runtime HTTP client
-// The ofetch library handles connection pooling internally
-
 export type {
   ApiClientConfig,
   ConvertDocumentsRequest,

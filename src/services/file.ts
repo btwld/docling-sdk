@@ -1,3 +1,4 @@
+import { loadNodeModule } from "../platform/node-modules";
 import type { HttpClient } from "../api/http";
 import { stringToUint8Array } from "../platform/binary";
 import type {
@@ -135,6 +136,7 @@ export class FileService {
 
       const taskData = response.data;
       const taskId = taskData.task_id;
+      if (!taskId) throw new Error("Async upload did not return task_id");
 
       // Use centralized task manager for polling
       this.taskManager.startPollingExistingTask(taskId, {
@@ -255,6 +257,14 @@ export class FileService {
         };
       }
 
+      this.taskManager.startPollingExistingTask(taskId, {
+        timeout: 15 * 60 * 1000, // 15 minutes max
+        pollInterval: 2000,
+        maxPolls: 450, // 15 minutes / 2 seconds
+        waitSeconds: 100,
+        pollingRetries: 5,
+      });
+
       const result = await this.taskManager.waitForCompletion(taskId);
 
       if (!result.success) {
@@ -293,6 +303,10 @@ export class FileService {
 
         if (this.isReadableStream(stream)) {
           result.fileStream = stream;
+        } else if (stream instanceof Uint8Array) {
+          result.data = stream;
+        } else {
+          return { success: false, error: { message: "Expected ZIP file data or stream" } };
         }
 
         return result;
@@ -406,15 +420,19 @@ export class FileService {
         };
       }
 
-      const fileRes = await this.http.requestFileStream<ConvertDocumentResponse>(
-        `/v1/result/${taskId}`,
-        { method: "GET", headers: { Accept: "application/zip" } }
-      );
+      const fileRes = await this.http.requestFileStream<Uint8Array>(`/v1/result/${taskId}`, {
+        method: "GET",
+        headers: { Accept: "application/zip" },
+      });
 
-      if (fileRes.fileStream && fileRes.fileMetadata) {
+      if (
+        (fileRes.fileStream || fileRes.data instanceof Uint8Array) &&
+        fileRes.fileMetadata &&
+        fileRes.headers["content-type"]?.includes("application/zip")
+      ) {
         return {
           success: true,
-          fileStream: fileRes.fileStream,
+          ...(fileRes.fileStream ? { fileStream: fileRes.fileStream } : { data: fileRes.data }),
           fileMetadata: fileRes.fileMetadata,
         };
       }
@@ -470,7 +488,7 @@ export class FileService {
 
       if (looksLikeFilePath) {
         // Dynamic import for Node.js file system
-        const fs = await import("node:fs/promises");
+        const fs = await loadNodeModule("node:fs/promises");
         const buffer = await fs.readFile(file);
         return new Uint8Array(buffer);
       }
@@ -504,72 +522,13 @@ export class FileService {
     targetKind?: "inbody" | "zip"
   ): Record<string, unknown> {
     const fields: Record<string, unknown> = {};
-
-    if (options.from_formats) fields.from_formats = options.from_formats;
-    if (options.to_formats) fields.to_formats = options.to_formats;
-
-    if (options.pipeline) fields.pipeline = options.pipeline;
-    if (options.page_range) fields.page_range = options.page_range;
-
-    if (options.do_ocr !== undefined) fields.do_ocr = options.do_ocr.toString();
-    if (options.force_ocr !== undefined) fields.force_ocr = options.force_ocr.toString();
-    if (options.ocr_engine) fields.ocr_engine = options.ocr_engine;
-    if (options.ocr_lang) fields.ocr_lang = options.ocr_lang;
-    if (options.ocr_options) fields.ocr_options = options.ocr_options;
-
-    // PDF backend
-    if (options.pdf_backend) fields.pdf_backend = options.pdf_backend;
-
-    // Table options
-    if (options.table_mode) fields.table_mode = options.table_mode;
-    if (options.table_cell_matching !== undefined)
-      fields.table_cell_matching = options.table_cell_matching.toString();
-    if (options.do_table_structure !== undefined)
-      fields.do_table_structure = options.do_table_structure.toString();
-    if (options.table_structure_options)
-      fields.table_structure_options = options.table_structure_options;
-
-    if (options.image_export_mode) fields.image_export_mode = options.image_export_mode;
-    if (options.include_images !== undefined)
-      fields.include_images = options.include_images.toString();
-    if (options.images_scale !== undefined) fields.images_scale = options.images_scale.toString();
-    if (options.generate_page_images !== undefined)
-      fields.generate_page_images = options.generate_page_images.toString();
-    if (options.generate_picture_images !== undefined)
-      fields.generate_picture_images = options.generate_picture_images.toString();
-
-    // Enrichment options
-    if (options.do_code_enrichment !== undefined)
-      fields.do_code_enrichment = options.do_code_enrichment.toString();
-    if (options.do_formula_enrichment !== undefined)
-      fields.do_formula_enrichment = options.do_formula_enrichment.toString();
-    if (options.do_picture_classification !== undefined)
-      fields.do_picture_classification = options.do_picture_classification.toString();
-    if (options.do_picture_description !== undefined)
-      fields.do_picture_description = options.do_picture_description.toString();
-    if (options.picture_description_area_threshold !== undefined)
-      fields.picture_description_area_threshold =
-        options.picture_description_area_threshold.toString();
-    if (options.picture_description_local)
-      fields.picture_description_local = options.picture_description_local;
-    if (options.picture_description_api)
-      fields.picture_description_api = options.picture_description_api;
-
-    // Other options
-    if (options.abort_on_error !== undefined)
-      fields.abort_on_error = options.abort_on_error.toString();
-    if (options.document_timeout !== undefined)
-      fields.document_timeout = options.document_timeout.toString();
-    if (options.md_page_break_placeholder)
-      fields.md_page_break_placeholder = options.md_page_break_placeholder;
-    if (options.create_legacy_output !== undefined)
-      fields.create_legacy_output = options.create_legacy_output.toString();
-    if (options.force_backend_text !== undefined)
-      fields.force_backend_text = options.force_backend_text.toString();
-
-    if (targetKind) {
-      fields.target_type = targetKind;
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== null) {
+        fields[key] =
+          typeof value === "boolean" || typeof value === "number" ? String(value) : value;
+      }
     }
+    if (targetKind) fields.target_type = targetKind;
 
     return fields;
   }

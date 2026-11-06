@@ -75,11 +75,8 @@ export {
 export {
   PlatformHttpClient,
   createHttpClient,
-  $fetch,
-  ofetch,
-  type FetchOptions,
-  type FetchError,
 } from "./http";
+export { $fetch, ofetch, type FetchOptions, type FetchError } from "ofetch";
 
 // WebSocket (crossws-style)
 export {

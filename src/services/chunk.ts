@@ -1,3 +1,4 @@
+import { loadNodeModule } from "../platform/node-modules";
 import type { HttpClient } from "../api/http";
 import { isBinary, stringToUint8Array } from "../platform/binary";
 import type {
@@ -43,49 +44,48 @@ export class ChunkService {
     this.taskManager = new AsyncTaskManager(http);
   }
 
-  /**
-   * Chunk document using HybridChunker (SYNC endpoint)
-   * Uses the synchronous /v1/chunk/hybrid/file endpoint
-   * Perfect for quick JSON responses with chunks
-   */
   async chunkHybridSync(
     file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ChunkDocumentResponse> {
-    const fileBuffer = await this.ensureUint8Array(file);
-
-    const response = await this.http.streamUpload<ChunkDocumentResponse>(
-      "/v1/chunk/hybrid/file",
-      [
-        {
-          name: "files",
-          data: fileBuffer,
-          filename,
-          contentType: this.getContentType(filename),
-          size: fileBuffer.length,
-        },
-      ],
-      this.buildFormFields(options, "inbody")
-    );
-
-    return response.data;
+    return this.chunkFile("hybrid", false, file, filename, options);
   }
 
-  /**
-   * Chunk document using HierarchicalChunker (SYNC endpoint)
-   * Uses the synchronous /v1/chunk/hierarchical/file endpoint
-   * Perfect for quick JSON responses with chunks
-   */
   async chunkHierarchicalSync(
     file: Uint8Array | string,
     filename: string,
     options: ConversionOptions = {}
   ): Promise<ChunkDocumentResponse> {
-    const fileBuffer = await this.ensureUint8Array(file);
+    return this.chunkFile("hierarchical", false, file, filename, options);
+  }
 
-    const response = await this.http.streamUpload<ChunkDocumentResponse>(
-      "/v1/chunk/hierarchical/file",
+  async chunkHybridAsync(
+    file: Uint8Array | string,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ChunkDocumentResponse> {
+    return this.chunkFile("hybrid", true, file, filename, options);
+  }
+
+  async chunkHierarchicalAsync(
+    file: Uint8Array | string,
+    filename: string,
+    options: ConversionOptions = {}
+  ): Promise<ChunkDocumentResponse> {
+    return this.chunkFile("hierarchical", true, file, filename, options);
+  }
+
+  private async chunkFile(
+    kind: "hybrid" | "hierarchical",
+    asynchronous: boolean,
+    file: Uint8Array | string,
+    filename: string,
+    options: ConversionOptions
+  ): Promise<ChunkDocumentResponse> {
+    const fileBuffer = await this.ensureUint8Array(file);
+    const response = await this.http.streamUpload<ChunkDocumentResponse | TaskStatusResponse>(
+      `/v1/chunk/${kind}/file${asynchronous ? "/async" : ""}`,
       [
         {
           name: "files",
@@ -97,126 +97,19 @@ export class ChunkService {
       ],
       this.buildFormFields(options, "inbody")
     );
-
-    return response.data;
-  }
-
-  /**
-   * Chunk document using HybridChunker (ASYNC endpoint)
-   * Uses AsyncTaskManager with EventEmitter for clean async handling
-   * Perfect for ZIP downloads, batch processing, long-running tasks
-   */
-  async chunkHybridAsync(
-    file: Uint8Array | string,
-    filename: string,
-    options: ConversionOptions = {}
-  ): Promise<ChunkDocumentResponse> {
-    try {
-      const fileBuffer = await this.ensureUint8Array(file);
-
-      const response = await this.http.streamUpload<TaskStatusResponse>(
-        "/v1/chunk/hybrid/file/async",
-        [
-          {
-            name: "files",
-            data: fileBuffer,
-            filename,
-            contentType: this.getContentType(filename),
-            size: fileBuffer.length,
-          },
-        ],
-        this.buildFormFields(options, "inbody")
-      );
-
-      const taskData = response.data;
-      const taskId = taskData.task_id;
-
-      if (!taskId) {
-        throw new Error("No task ID received from async chunk endpoint");
-      }
-
-      // Use centralized task manager for polling
-      this.taskManager.startPollingExistingTask(taskId, {
-        timeout: 15 * 60 * 1000, // 15 minutes max
-        pollInterval: 2000,
-        maxPolls: 450, // 15 minutes / 2 seconds
-        waitSeconds: 100,
-        pollingRetries: 5,
-      });
-
-      // Wait for completion using the task manager
-      const result = await this.taskManager.waitForCompletion(taskId);
-
-      if (!result.success) {
-        throw new Error(result.error?.message || "Chunk task failed");
-      }
-
-      // Task completed, get the result
-      const resultResponse = await this.http.getJson<ChunkDocumentResponse>(`/v1/result/${taskId}`);
-
-      return resultResponse.data;
-    } catch (error) {
-      throw error instanceof Error ? error : new Error(`Async chunk failed: ${String(error)}`);
-    }
-  }
-
-  /**
-   * Chunk document using HierarchicalChunker (ASYNC endpoint)
-   * Uses AsyncTaskManager with EventEmitter for clean async handling
-   * Perfect for ZIP downloads, batch processing, long-running tasks
-   */
-  async chunkHierarchicalAsync(
-    file: Uint8Array | string,
-    filename: string,
-    options: ConversionOptions = {}
-  ): Promise<ChunkDocumentResponse> {
-    try {
-      const fileBuffer = await this.ensureUint8Array(file);
-
-      const response = await this.http.streamUpload<TaskStatusResponse>(
-        "/v1/chunk/hierarchical/file/async",
-        [
-          {
-            name: "files",
-            data: fileBuffer,
-            filename,
-            contentType: this.getContentType(filename),
-            size: fileBuffer.length,
-          },
-        ],
-        this.buildFormFields(options, "inbody")
-      );
-
-      const taskData = response.data;
-      const taskId = taskData.task_id;
-
-      if (!taskId) {
-        throw new Error("No task ID received from async chunk endpoint");
-      }
-
-      // Use centralized task manager for polling
-      this.taskManager.startPollingExistingTask(taskId, {
-        timeout: 15 * 60 * 1000, // 15 minutes max
-        pollInterval: 2000,
-        maxPolls: 450, // 15 minutes / 2 seconds
-        waitSeconds: 100,
-        pollingRetries: 5,
-      });
-
-      // Wait for completion using the task manager
-      const result = await this.taskManager.waitForCompletion(taskId);
-
-      if (!result.success) {
-        throw new Error(result.error?.message || "Chunk task failed");
-      }
-
-      // Task completed, get the result
-      const resultResponse = await this.http.getJson<ChunkDocumentResponse>(`/v1/result/${taskId}`);
-
-      return resultResponse.data;
-    } catch (error) {
-      throw error instanceof Error ? error : new Error(`Async chunk failed: ${String(error)}`);
-    }
+    if (!asynchronous) return response.data as ChunkDocumentResponse;
+    const taskId = (response.data as TaskStatusResponse).task_id;
+    if (!taskId) throw new Error("No task ID received from async chunk endpoint");
+    this.taskManager.startPollingExistingTask(taskId, {
+      timeout: 15 * 60 * 1000,
+      pollInterval: 2000,
+      maxPolls: 450,
+      waitSeconds: 100,
+      pollingRetries: 5,
+    });
+    const result = await this.taskManager.waitForCompletion(taskId);
+    if (!result.success) throw new Error(result.error?.message ?? "Chunk task failed");
+    return this.getChunkTaskResult(taskId);
   }
 
   /**
@@ -224,61 +117,38 @@ export class ChunkService {
    * Returns task object for manual progress tracking
    */
   async chunkHybridFileAsync(params: ChunkFileUploadParams): Promise<AsyncChunkTask> {
-    const files = Array.isArray(params.files) ? params.files : [params.files];
-    const filenames = Array.isArray(params.filename)
-      ? params.filename
-      : [params.filename || "document"];
-
-    const uploadFiles = files.map((file, index) => {
-      const data = isBinary(file) ? file : stringToUint8Array(file as unknown as string);
-      return {
-        name: "files",
-        data,
-        filename: filenames[index] || `document-${index}`,
-        contentType: this.getContentType(filenames[index] || "document"),
-        size: data.length,
-      };
-    });
-
-    const response = await this.http.streamUpload<TaskStatusResponse>(
-      "/v1/chunk/hybrid/file/async",
-      uploadFiles,
-      this.buildFormFields(params, params.target_type || "inbody")
-    );
-
-    const taskData = response.data;
-    return this.createAsyncChunkTask(taskData);
+    return this.createFileTask("hybrid", params);
   }
 
-  /**
-   * Create async chunk task for HierarchicalChunker
-   * Returns task object for manual progress tracking
-   */
   async chunkHierarchicalFileAsync(params: ChunkFileUploadParams): Promise<AsyncChunkTask> {
+    return this.createFileTask("hierarchical", params);
+  }
+
+  private async createFileTask(
+    kind: "hybrid" | "hierarchical",
+    params: ChunkFileUploadParams
+  ): Promise<AsyncChunkTask> {
     const files = Array.isArray(params.files) ? params.files : [params.files];
-    const filenames = Array.isArray(params.filename)
-      ? params.filename
-      : [params.filename || "document"];
-
-    const uploadFiles = files.map((file, index) => {
-      const data = isBinary(file) ? file : stringToUint8Array(file as unknown as string);
-      return {
-        name: "files",
-        data,
-        filename: filenames[index] || `document-${index}`,
-        contentType: this.getContentType(filenames[index] || "document"),
-        size: data.length,
-      };
-    });
-
-    const response = await this.http.streamUpload<TaskStatusResponse>(
-      "/v1/chunk/hierarchical/file/async",
-      uploadFiles,
-      this.buildFormFields(params, params.target_type || "inbody")
+    const filenames = Array.isArray(params.filename) ? params.filename : [params.filename];
+    const uploadFiles = await Promise.all(
+      files.map(async (file, index) => {
+        const data = isBinary(file) ? file : new Uint8Array(await file.arrayBuffer());
+        const filename = filenames[index] ?? (isBinary(file) ? `document-${index}` : file.name);
+        return {
+          name: "files",
+          data,
+          filename,
+          contentType: !isBinary(file) && file.type ? file.type : this.getContentType(filename),
+          size: data.length,
+        };
+      })
     );
-
-    const taskData = response.data;
-    return this.createAsyncChunkTask(taskData);
+    const response = await this.http.streamUpload<TaskStatusResponse>(
+      `/v1/chunk/${kind}/file/async`,
+      uploadFiles,
+      this.buildFormFields(params, params.target_type ?? "inbody")
+    );
+    return this.createAsyncChunkTask(response.data);
   }
 
   /**
@@ -363,13 +233,45 @@ export class ChunkService {
       emit(event: string, ...args: unknown[]) {
         const listeners = eventListeners[event] || [];
         for (const listener of listeners) {
-          listener(...args);
+          if (event !== "error") listener(...args);
+          else {
+            try {
+              void Promise.resolve(listener(...args)).catch((error) => {
+                console.error("Error in error callback:", error);
+              });
+            } catch (error) {
+              console.error("Error in error callback:", error);
+            }
+          }
         }
       },
 
-      poll: () => this.pollTaskStatus(taskData.task_id),
-      waitForCompletion: () => this.waitForTaskCompletion(taskData.task_id),
-      getResult: () => this.getChunkTaskResult(taskData.task_id),
+      poll: async () => {
+        const status = await this.pollTaskStatus(taskData.task_id);
+        task.status = status.task_status;
+        task.emit("progress", status);
+        return status;
+      },
+      waitForCompletion: async () => {
+        try {
+          const status = await this.waitForTaskCompletion(taskData.task_id);
+          task.status = status.task_status;
+          task.emit("progress", status);
+          return status;
+        } catch (error) {
+          task.emit("error", { message: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
+      },
+      getResult: async () => {
+        const result = await this.getChunkTaskResult(taskData.task_id);
+        task.emit("complete", result);
+        return result;
+      },
+      cancel: async () => {
+        this.taskManager.startPollingExistingTask(taskData.task_id);
+        await this.taskManager.cancelTask(taskData.task_id);
+      },
     };
 
     return task as AsyncChunkTask;
@@ -387,19 +289,16 @@ export class ChunkService {
    * Wait for task completion
    */
   private async waitForTaskCompletion(taskId: string): Promise<TaskStatusResponse> {
-    // Poll until completion
-    let status: TaskStatusResponse;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      status = await this.pollTaskStatus(taskId);
-      if (status.task_status === "success" || status.task_status === "failure") {
-        break;
-      }
-      // Wait before next poll
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    this.taskManager.startPollingExistingTask(taskId);
+    const result = await this.taskManager.waitForCompletion(taskId);
+    if (
+      !result.success &&
+      result.error?.message !== "Task failure" &&
+      result.error?.message !== "Task revoked"
+    ) {
+      throw new Error(result.error?.message ?? "Chunk task failed");
     }
-
-    return status;
+    return this.pollTaskStatus(taskId);
   }
 
   /**
@@ -414,12 +313,16 @@ export class ChunkService {
    * Build form fields for multipart upload
    */
   private buildFormFields(
-    options: ConversionOptions,
+    options: ConversionOptions & { include_converted_doc?: boolean },
     targetType: "inbody" | "zip"
   ): Record<string, unknown> {
     const fields: Record<string, unknown> = {
       target_type: targetType,
     };
+
+    if (options.include_converted_doc !== undefined) {
+      fields.include_converted_doc = String(options.include_converted_doc);
+    }
 
     // Add conversion options
     if (options.from_formats) {
@@ -462,6 +365,32 @@ export class ChunkService {
       fields.convert_abort_on_error = String(options.abort_on_error);
     }
 
+    // Additional conversion fields supported by the pinned Serve 1.7.2 chunk forms.
+    // Object values become JSON form strings in the HTTP multipart serializer.
+    const conversionFields = [
+      "do_table_structure",
+      "include_images",
+      "images_scale",
+      "do_code_enrichment",
+      "do_formula_enrichment",
+      "do_picture_classification",
+      "do_picture_description",
+      "picture_description_area_threshold",
+      "picture_description_local",
+      "picture_description_api",
+      "md_page_break_placeholder",
+      "vlm_pipeline_model",
+      "vlm_pipeline_model_local",
+      "vlm_pipeline_model_api",
+    ] as const;
+    for (const key of conversionFields) {
+      const value = options[key];
+      if (value !== undefined && value !== null) {
+        fields[`convert_${key}`] =
+          typeof value === "boolean" || typeof value === "number" ? String(value) : value;
+      }
+    }
+
     // Add chunking-specific options
     if (options.chunking_use_markdown_tables !== undefined) {
       fields.chunking_use_markdown_tables = String(options.chunking_use_markdown_tables);
@@ -497,7 +426,7 @@ export class ChunkService {
 
       if (looksLikeFilePath) {
         // Dynamic import for Node.js file system
-        const fs = await import("node:fs/promises");
+        const fs = await loadNodeModule("node:fs/promises");
         const buffer = await fs.readFile(file);
         return new Uint8Array(buffer);
       }
@@ -528,6 +457,6 @@ export class ChunkService {
    * Clean up resources
    */
   destroy(): void {
-    // Clean up any resources if needed
+    this.taskManager.destroy();
   }
 }

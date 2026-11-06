@@ -1,15 +1,11 @@
+import { loadNodeModule } from "../platform/node-modules";
 /**
  * HTTP client for Docling API
  * Wraps the cross-runtime platform HTTP client while maintaining backward compatibility
  */
 
-import { type ExtendedHttpOptions, type FileUploadInfo, PlatformHttpClient } from "../platform";
-import {
-  type BinaryData,
-  bufferToUint8Array,
-  createBinary,
-  isNodeBuffer,
-} from "../platform/binary";
+import { type ExtendedHttpOptions, PlatformHttpClient } from "../platform";
+import type { BinaryData } from "../platform/binary";
 import { isNode } from "../platform/detection";
 import { DoclingNetworkError, DoclingTimeoutError } from "../types";
 import type { ApiClientConfig } from "../types/api";
@@ -49,10 +45,10 @@ export class HttpClient {
 
     this.config = {
       baseUrl: config.baseUrl.endsWith("/") ? config.baseUrl.slice(0, -1) : config.baseUrl,
-      timeout: config.timeout || 60000,
+      timeout: config.timeout ?? 60000,
       headers: config.headers || {},
-      retries: config.retries || 3,
-      retryDelay: config.retryDelay || 1000,
+      retries: config.retries ?? 3,
+      retryDelay: config.retryDelay ?? 1000,
     };
 
     this.platformClient = new PlatformHttpClient({
@@ -71,15 +67,15 @@ export class HttpClient {
     try {
       const platformOptions: ExtendedHttpOptions = {
         method: (options.method as ExtendedHttpOptions["method"]) || "GET",
-        headers: this.buildHeaders(options.headers),
-        timeout: options.timeout || this.config.timeout,
+        headers: this.buildHeaders(options.headers, options.body),
+        timeout: options.timeout ?? this.config.timeout,
         retry: options.retries ?? this.config.retries,
         retryDelay: options.retryDelay ?? this.config.retryDelay,
       };
 
       // Handle body
       if (options.body !== undefined) {
-        platformOptions.body = this.normalizeBody(options.body);
+        platformOptions.body = await this.normalizeBody(options.body);
       }
 
       // Handle accept header
@@ -106,7 +102,7 @@ export class HttpClient {
         headers: response.headers,
       };
     } catch (error) {
-      throw this.normalizeError(error, options.timeout || this.config.timeout, endpoint);
+      throw this.normalizeError(error, options.timeout ?? this.config.timeout, endpoint);
     }
   }
 
@@ -259,18 +255,12 @@ export class HttpClient {
     options: Omit<HttpRequestOptions, "method" | "body"> = {}
   ): Promise<HttpResponse<T>> {
     try {
-      const fileInfos: FileUploadInfo[] = files.map((file) => ({
-        name: file.name,
-        data: typeof file.data === "string" ? file.data : this.toUint8Array(file.data),
-        filename: file.filename,
-        contentType: file.contentType,
-      }));
-
-      const response = await this.platformClient.uploadFiles<T>(endpoint, fileInfos, fields, {
-        timeout: options.timeout || this.config.timeout,
+      const response = await this.platformClient.uploadFiles<T>(endpoint, files, fields, {
+        timeout: options.timeout ?? this.config.timeout,
         retry: options.retries ?? this.config.retries,
         retryDelay: options.retryDelay ?? this.config.retryDelay,
-        responseType: options.accept === "bytes" ? "binary" : "json",
+        headers: this.buildHeaders(options.headers),
+        responseType: options.accept === "bytes" ? "binary" : (options.accept ?? "json"),
       });
 
       // Convert Uint8Array back to Buffer for backward compatibility
@@ -286,7 +276,7 @@ export class HttpClient {
         headers: response.headers,
       };
     } catch (error) {
-      throw this.normalizeError(error, options.timeout || this.config.timeout, endpoint);
+      throw this.normalizeError(error, options.timeout ?? this.config.timeout, endpoint);
     }
   }
 
@@ -317,35 +307,28 @@ export class HttpClient {
     try {
       const { onProgress, chunkSize, ...requestOptions } = options;
 
-      const normalizedFiles = files.map((file) => ({
-        name: file.name,
-        data: file.data instanceof ReadableStream ? file.data : this.toUint8Array(file.data),
-        filename: file.filename,
-        contentType: file.contentType,
-        size: file.size,
-      }));
-
-      const response = await this.platformClient.streamUpload<T>(
-        endpoint,
-        normalizedFiles,
-        fields,
-        {
-          onProgress,
-          chunkSize,
-          timeout: requestOptions.timeout || this.config.timeout,
-          retry: requestOptions.retries ?? this.config.retries,
-          retryDelay: requestOptions.retryDelay ?? this.config.retryDelay,
-        }
-      );
+      const response = await this.platformClient.streamUpload<T>(endpoint, files, fields, {
+        onProgress,
+        chunkSize,
+        headers: this.buildHeaders(requestOptions.headers),
+        responseType:
+          requestOptions.accept === "bytes" ? "binary" : (requestOptions.accept ?? "json"),
+        timeout: requestOptions.timeout ?? this.config.timeout,
+        retry: requestOptions.retries ?? this.config.retries,
+        retryDelay: requestOptions.retryDelay ?? this.config.retryDelay,
+      });
 
       return {
-        data: response.data,
+        data:
+          options.accept === "bytes" && response.data instanceof Uint8Array && isNode()
+            ? (this.toBuffer(response.data) as T)
+            : response.data,
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
       };
     } catch (error) {
-      throw this.normalizeError(error, options.timeout || this.config.timeout, endpoint);
+      throw this.normalizeError(error, options.timeout ?? this.config.timeout, endpoint);
     }
   }
 
@@ -397,7 +380,13 @@ export class HttpClient {
         chunkSize,
         onProgress: (progress) => {
           if (onProgress) {
-            chunkIndex = Math.ceil((progress.uploadedBytes / file.size) * totalChunks);
+            chunkIndex =
+              file.size > 0
+                ? Math.min(
+                    totalChunks,
+                    Math.ceil((progress.uploadedBytes / file.size) * totalChunks)
+                  )
+                : 0;
             onProgress({
               uploadedBytes: progress.uploadedBytes,
               totalBytes: progress.totalBytes,
@@ -487,7 +476,7 @@ export class HttpClient {
       }) => void;
       estimatedSize?: number;
       accept?: "json" | "zip";
-    } & Omit<HttpRequestOptions, "method" | "body"> = {}
+    } & Omit<HttpRequestOptions, "method" | "body" | "accept"> = {}
   ): Promise<HttpResponse<T>> {
     const { onProgress, estimatedSize, accept, ...requestOptions } = options;
 
@@ -507,6 +496,7 @@ export class HttpClient {
       fields,
       {
         ...requestOptions,
+        accept: accept === "zip" ? "bytes" : accept,
         onProgress: onProgress
           ? (progress) => {
               onProgress({
@@ -547,8 +537,8 @@ export class HttpClient {
     }
 
     // Dynamic import for Node.js fs
-    const { createReadStream } = await import("node:fs");
-    const { stat } = await import("node:fs/promises");
+    const { createReadStream } = await loadNodeModule("node:fs");
+    const { stat } = await loadNodeModule("node:fs/promises");
 
     const stats = await stat(filePath);
     const fileStream = createReadStream(filePath);
@@ -590,22 +580,28 @@ export class HttpClient {
     try {
       const response = await this.platformClient.requestFileStream<T>(endpoint, {
         method: (options.method as ExtendedHttpOptions["method"]) || "GET",
-        headers: this.buildHeaders(options.headers),
-        timeout: options.timeout || this.config.timeout,
+        headers: this.buildHeaders(options.headers, options.body),
+        ...(options.body !== undefined && { body: await this.normalizeBody(options.body) }),
+        timeout: options.timeout ?? this.config.timeout,
+        retry: options.retries ?? this.config.retries,
+        retryDelay: options.retryDelay ?? this.config.retryDelay,
       });
 
-      // Convert Web ReadableStream to Node.js Readable (if in Node.js)
+      // Preserve the public Node stream / non-Node byte-data contract.
       let fileStream: import("node:stream").Readable | undefined;
+      let data = response.data;
       if (response.fileStream && isNode()) {
-        const { Readable } = await import("node:stream");
+        const { Readable } = await loadNodeModule("node:stream");
         // Cast to unknown first to avoid type incompatibility between Web and Node.js ReadableStream
         fileStream = Readable.fromWeb(
           response.fileStream as unknown as import("stream/web").ReadableStream
         );
+      } else if (response.fileStream) {
+        data = new Uint8Array(await new Response(response.fileStream).arrayBuffer()) as T;
       }
 
       return {
-        data: response.data,
+        data,
         fileStream,
         fileMetadata: response.fileMetadata,
         status: response.status,
@@ -613,7 +609,7 @@ export class HttpClient {
         headers: response.headers,
       };
     } catch (error) {
-      throw this.normalizeError(error, options.timeout || this.config.timeout, endpoint);
+      throw this.normalizeError(error, options.timeout ?? this.config.timeout, endpoint);
     }
   }
 
@@ -688,41 +684,34 @@ export class HttpClient {
   /**
    * Build request headers
    */
-  private buildHeaders(additionalHeaders?: HeadersInit): Record<string, string> {
-    const baseHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.config.headers,
-    };
-
-    if (!additionalHeaders) {
-      return baseHeaders;
-    }
-
-    if (additionalHeaders instanceof Headers) {
-      const result = { ...baseHeaders };
-      additionalHeaders.forEach((value, key) => {
-        result[key] = value;
-      });
-      return result;
-    }
-
-    if (Array.isArray(additionalHeaders)) {
-      const result = { ...baseHeaders };
-      for (const [key, value] of additionalHeaders) {
-        result[key] = value;
-      }
-      return result;
-    }
-
-    return { ...baseHeaders, ...(additionalHeaders as Record<string, string>) };
+  private buildHeaders(additionalHeaders?: HeadersInit, body?: unknown): Record<string, string> {
+    const contentType =
+      body instanceof Blob && body.type
+        ? body.type
+        : body instanceof URLSearchParams
+          ? "application/x-www-form-urlencoded;charset=UTF-8"
+          : "application/json";
+    const headers = new Headers({ "Content-Type": contentType });
+    new Headers(this.config.headers).forEach((value, key) => headers.set(key, value));
+    new Headers(additionalHeaders).forEach((value, key) => headers.set(key, value));
+    const result: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      result[key] = value;
+    });
+    return result;
   }
 
   /**
    * Normalize body for platform client
    */
-  private normalizeBody(
+  private async normalizeBody(
     body: BodyInit | unknown
-  ): string | Uint8Array | FormData | ReadableStream<Uint8Array> {
+  ): Promise<string | Uint8Array | FormData | ReadableStream<Uint8Array> | undefined> {
+    if (body === null) return undefined;
+    if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
+    if (body instanceof URLSearchParams) return body.toString();
+    if (ArrayBuffer.isView(body))
+      return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
     if (body instanceof FormData) {
       return body;
     }
@@ -739,43 +728,15 @@ export class HttpClient {
       return new Uint8Array(body);
     }
 
-    if (body instanceof Uint8Array) {
-      return body;
-    }
-
-    if (isNodeBuffer(body)) {
-      return bufferToUint8Array(body);
-    }
-
     // Object - serialize to JSON
     return JSON.stringify(body);
-  }
-
-  /**
-   * Convert to Uint8Array
-   */
-  private toUint8Array(data: unknown): Uint8Array {
-    if (data instanceof Uint8Array) {
-      return data;
-    }
-    if (isNodeBuffer(data)) {
-      return bufferToUint8Array(data);
-    }
-    if (typeof data === "string") {
-      return createBinary(data);
-    }
-    throw new Error("Cannot convert to Uint8Array");
   }
 
   /**
    * Convert Uint8Array to Buffer (Node.js only)
    */
   private toBuffer(data: Uint8Array): unknown {
-    if (isNode()) {
-      // In Node.js, Buffer is a subclass of Uint8Array
-      return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
-    }
-    return data;
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   }
 
   /**
@@ -789,8 +750,6 @@ export class HttpClient {
             controller.enqueue(new TextEncoder().encode(chunk));
           } else if (chunk instanceof Uint8Array) {
             controller.enqueue(chunk);
-          } else if (isNodeBuffer(chunk)) {
-            controller.enqueue(new Uint8Array(chunk as Buffer));
           }
         });
 
@@ -840,7 +799,12 @@ export class HttpClient {
 
     if (error instanceof Error) {
       // Check for timeout
-      if (error.name === "AbortError" || error.name === "TimeoutError") {
+      const cause = error.cause;
+      if (
+        error.name === "AbortError" ||
+        error.name === "TimeoutError" ||
+        (cause instanceof Error && (cause.name === "AbortError" || cause.name === "TimeoutError"))
+      ) {
         return new DoclingTimeoutError(timeout, context);
       }
 
