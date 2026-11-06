@@ -56,14 +56,17 @@ merge, custom native ABI, TypeScript-to-Dart dependency or implicit setup.
   and TableFormer encoder/decoder/bbox execution timings in the same sandbox,
   clean diagnostics and valid content. A follow-up review caught silent terminal
   inference failure despite timings; the gate additionally requires first-class
-  PDF table-cell geometry that the pinned geometric fallback cannot emit. Retained positive/fallback/error controls
-  exercise this validator; only compatible live CI can establish the final pass.
+  PDF table-cell geometry that the pinned geometric fallback cannot emit. Independent
+  re-review closed this finding for the pinned fixture: 44 probe/parser controls
+  and 39 independent structure controls pass. Compatible live CI then passed both
+  model probes, including six first-class TableFormer cells.
 - **macOS setup CLI path aliases.** Packed-consumer CI found that the import/main
   guard compared a real module path to a symlink-spelled argv path and did nothing.
-  Canonicalizing argv fixes this; the 60-case setup suite includes a symlinked
-  invocation regression. Native conversion is still explicitly Linux-only.
+  Canonicalizing both paths fixes macOS aliases and Windows path spelling; the
+  60-case setup suite includes a symlinked invocation regression. Native conversion
+  is still explicitly Linux-only.
 
-Input/output validation uses existing `fflate` and `saxes`, not a native ABI or
+Input/output validation uses `fflate` and `saxes`, not a native ABI or
 new general plugin/runner framework. The existing shell-free process runner
 owns process lifecycle. ZIP/header checks are needed before bounded inflation;
 engine-specific validation is not replaced by TypeScript casts. Independent
@@ -99,22 +102,53 @@ provisions a profile for the exact administrator-installed `/usr/bin/bwrap`,
 leaving the global restriction enabled. Neither SDK nor setup changes host
 security policy. Those failed runs remain evidence, not conversion passes.
 
-### Recorded local checks
+## Compatible CI — actual packed SDK
+
+[Run 42314024997](https://github.com/btwld/docling-sdk/actions/runs/42314024997)
+passed **26 required gates on each of Node 18.20.8 and 24.22.2** on Ubuntu 24.04
+x64, at commit `e4cbecf1ad41497a2d5becd929240397b4b71e72`. This was the actual
+packed npm consumer and explicitly installed pinned runtime, without an alternate
+loader, stub converter, isolation skip or Python fallback. The permanent
+[compact receipts](native-live-validation-2026-11-06.json) record exact validator,
+package, manifest and original summary hashes. Full bounded artifacts are retained
+locally as well as in the workflow's time-limited artifacts.
+
+- Digital/scanned PDF, DOCX and PPTX pass content, table, image-byte, schema,
+  reference, page-range and speaker-note checks. Layout/TableFormer and OCR
+  detector/recognizer execution are independently established for the fixtures.
+- Live no-egress, private procfs, hidden host files, read-only models and separate
+  namespaces pass. SDK imports/conversions make no setup/download calls.
+- A one-second cooperative budget preserves one of 256 pages as `partial_success`
+  with incomplete coverage and warnings. Abort and hard deadline observe a real
+  engine first, then require its descendants gone and staging empty.
+- Same-basename concurrent requests publish separate jobs and requested formats.
+  Corrupt inputs and missing/corrupt models reject or return an unpublished
+  failure as specified; the installation and all fixtures finish unchanged.
+- Empty DOCX produces a valid empty document. Zero-slide PPTX is outside the
+  input contract and rejects before process launch. The first live run exposed
+  an incorrect validator expectation for this case; the correction did not
+  weaken input validation or accept an arbitrary conversion outcome.
+
+### Recorded checks
 
 | Gate | Result |
 | --- | --- |
-| Full production coverage run | 1,189 passed; six explicit sandbox capability skips; 56 files |
+| Latest complete CI coverage run ([Node 20](https://github.com/btwld/docling-sdk/actions/runs/42313808817/job/128221404949)) | 1,199 passed; no skips; 56 files |
+| Earlier local production coverage run | 1,189 passed; six explicit sandbox capability skips; 56 files |
 | Coverage lines / statements / functions / branches | 94.73% / 93.09% / 94.86% / 84.60%; all enforced 80% gates pass |
 | Setup suite after cancellation/CLI-alias repairs | 60 passed, no skips |
-| Packed consumers | Full/omitted optional dependencies, real subprocess/loopback HTTP, TypeScript 5.5.4 NodeNext, real Chrome API and browser bundling pass |
+| Packed consumers | Linux/macOS/Windows on Node 18/24 pass; full/omitted optional dependencies, subprocess/loopback HTTP and TypeScript 5.5.4 NodeNext checked; local real Chrome API/browser bundling also pass |
+| Actual native SDK | 26 gates pass on both Node 18/24, including model execution, no-egress, partial outcomes and process cleanup |
+| Typecheck / lint / schema / build / audit | Pass on Node 20/22/24; audit reports zero vulnerabilities |
 | Native bundle/import boundary | No model/executable/font payload; optional setup help and native import available without installation; root/browser exports unchanged |
-| Independent reviews | Artifact publication confirmed; setup commit/cancellation finding repaired with red/green evidence |
+| Independent reviews | Artifact publication, setup commit/cancellation and final model-execution discriminator confirmed after repairs |
 
 Coverage records include production sources intentionally; the original
 154-test/23.17% broad baseline used another denominator and Vitest version.
-The setup regression additions follow the full coverage run above and do not
-change production coverage. See the PR checks for the exact latest test count,
-Node matrix and live real-engine results rather than extrapolating from this table.
+The setup regression additions are included in the latest CI count. Local
+sandbox capability skips are not counted as passes; compatible CI has none.
+The [PR checks](https://github.com/btwld/docling-sdk/pull/98/checks) remain the
+source of truth for later commits, not an extrapolation from this dated record.
 
 ## Preserved evidence
 

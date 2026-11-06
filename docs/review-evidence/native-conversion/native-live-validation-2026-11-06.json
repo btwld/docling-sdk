@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "kind": "compatible-packed-native-ci-summary",
+  "date": "2026-11-06",
+  "repository": "btwld/docling-sdk",
+  "testedCommit": "e4cbecf1ad41497a2d5becd929240397b4b71e72",
+  "workflowRun": "https://github.com/btwld/docling-sdk/actions/runs/42314024997",
+  "host": "Ubuntu 24.04 x64; administrator-managed Bubblewrap AppArmor userns profile",
+  "receipts": [
+    {
+      "node": "v18.20.8",
+      "status": "passed",
+      "gates": 26,
+      "summarySha256": "adbaf5ca9080ef621706a23892e51237ceb2342358fc8087186cdea75d6d355b",
+      "validatorSha256": "58a035ef183759f5eaefef75b07cc4668b233032467c9dc7da0e9f21172af255",
+      "tarballSha256": "075479995b41a18f50b598d20eb7e27f660b56b7d569b64ca8e5f0d24c8b0de0",
+      "profile": "docling-rs-2.53.1-linux-x64-cpu-v1",
+      "manifestSha256": "ffc4485a7aa601d5209cebf3ca6fdc29c29b00da493f0663e7c8f6e7f5d2609d",
+      "cases": [
+        {
+          "name": "packed-import-before-installation",
+          "status": "passed"
+        },
+        {
+          "name": "compatible-linux-system-abi",
+          "status": "passed"
+        },
+        {
+          "name": "prepare-reviewed-runtime-once",
+          "status": "passed"
+        },
+        {
+          "name": "generate-deterministic-fixtures",
+          "status": "passed"
+        },
+        {
+          "name": "real-isolated-runtime-readiness",
+          "status": "passed"
+        },
+        {
+          "name": "live-no-egress-and-private-procfs",
+          "status": "passed"
+        },
+        {
+          "name": "missing-bubblewrap-fails-closed",
+          "status": "passed"
+        },
+        {
+          "name": "real-original.pdf",
+          "status": "success",
+          "coverage": {
+            "basis": "engine-reported",
+            "completed": [
+              1,
+              2
+            ],
+            "expected": 2,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-original.docx",
+          "status": "success",
+          "coverage": {
+            "basis": "not-reported",
+            "completed": []
+          }
+        },
+        {
+          "name": "real-original.pptx",
+          "status": "success",
+          "coverage": {
+            "basis": "office-package",
+            "completed": [
+              1,
+              2
+            ],
+            "expected": 2,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-scanned-ocr",
+          "status": "success",
+          "coverage": {
+            "basis": "engine-reported",
+            "completed": [
+              1
+            ],
+            "expected": 1,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-model-execution-original.pdf",
+          "status": "passed",
+          "stages": {
+            "layout.predict": {
+              "calls": 2,
+              "elapsedMs": 1683.3
+            },
+            "tf.encoder": {
+              "calls": 1,
+              "elapsedMs": 343.2
+            },
+            "tf.decode_loop": {
+              "calls": 1,
+              "elapsedMs": 37.5
+            },
+            "tf.bbox": {
+              "calls": 1,
+              "elapsedMs": 85
+            }
+          },
+          "tableformerStructure": {
+            "tables": 1,
+            "cells": 6
+          }
+        },
+        {
+          "name": "real-model-execution-scanned.pdf",
+          "status": "passed",
+          "stages": {
+            "layout.predict": {
+              "calls": 1,
+              "elapsedMs": 837
+            },
+            "ocr.det.net": {
+              "calls": 1,
+              "elapsedMs": 419.7
+            },
+            "ocr.rec": {
+              "calls": 1,
+              "elapsedMs": 83.4
+            }
+          }
+        },
+        {
+          "name": "real-pdf-page-range",
+          "status": "success",
+          "coverage": {
+            "basis": "engine-reported",
+            "requested": [
+              2,
+              2
+            ],
+            "completed": [
+              2
+            ],
+            "expected": 1,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-empty.docx",
+          "status": "success",
+          "coverage": {
+            "basis": "not-reported",
+            "completed": []
+          }
+        },
+        {
+          "name": "reject-zero-slide-pptx-before-launch",
+          "status": "passed",
+          "rejectedBeforeLaunch": true
+        },
+        {
+          "name": "reject-corrupt.pdf",
+          "status": "passed"
+        },
+        {
+          "name": "reject-corrupt.docx",
+          "status": "passed"
+        },
+        {
+          "name": "reject-corrupt.pptx",
+          "status": "passed"
+        },
+        {
+          "name": "real-cooperative-document-budget",
+          "status": "partial_success",
+          "coverage": {
+            "basis": "engine-reported",
+            "completed": [
+              1
+            ],
+            "expected": 256,
+            "complete": false
+          }
+        },
+        {
+          "name": "real-abort-and-cleanup",
+          "status": "passed",
+          "realEngineObserved": true,
+          "descendantsGone": true,
+          "stagingEmpty": true
+        },
+        {
+          "name": "real-deadline-and-cleanup",
+          "status": "passed",
+          "realEngineObserved": true,
+          "descendantsGone": true,
+          "stagingEmpty": true
+        },
+        {
+          "name": "same-basename-concurrency",
+          "status": "passed"
+        },
+        {
+          "name": "fail-closed-missing-model",
+          "status": "passed",
+          "rejectedBeforeLaunch": true
+        },
+        {
+          "name": "fail-closed-corrupt-model",
+          "status": "passed",
+          "rejectedBeforeLaunch": true
+        },
+        {
+          "name": "final-runtime-and-fixture-integrity",
+          "status": "passed",
+          "sdkFetchCalls": 0
+        }
+      ]
+    },
+    {
+      "node": "v24.22.2",
+      "status": "passed",
+      "gates": 26,
+      "summarySha256": "4b9fa34563769401f4218303942d02866422fd011d08c796f0c08fd8ca49a64a",
+      "validatorSha256": "58a035ef183759f5eaefef75b07cc4668b233032467c9dc7da0e9f21172af255",
+      "tarballSha256": "075479995b41a18f50b598d20eb7e27f660b56b7d569b64ca8e5f0d24c8b0de0",
+      "profile": "docling-rs-2.53.1-linux-x64-cpu-v1",
+      "manifestSha256": "ffc4485a7aa601d5209cebf3ca6fdc29c29b00da493f0663e7c8f6e7f5d2609d",
+      "cases": [
+        {
+          "name": "packed-import-before-installation",
+          "status": "passed"
+        },
+        {
+          "name": "compatible-linux-system-abi",
+          "status": "passed"
+        },
+        {
+          "name": "prepare-reviewed-runtime-once",
+          "status": "passed"
+        },
+        {
+          "name": "generate-deterministic-fixtures",
+          "status": "passed"
+        },
+        {
+          "name": "real-isolated-runtime-readiness",
+          "status": "passed"
+        },
+        {
+          "name": "live-no-egress-and-private-procfs",
+          "status": "passed"
+        },
+        {
+          "name": "missing-bubblewrap-fails-closed",
+          "status": "passed"
+        },
+        {
+          "name": "real-original.pdf",
+          "status": "success",
+          "coverage": {
+            "basis": "engine-reported",
+            "completed": [
+              1,
+              2
+            ],
+            "expected": 2,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-original.docx",
+          "status": "success",
+          "coverage": {
+            "basis": "not-reported",
+            "completed": []
+          }
+        },
+        {
+          "name": "real-original.pptx",
+          "status": "success",
+          "coverage": {
+            "basis": "office-package",
+            "completed": [
+              1,
+              2
+            ],
+            "expected": 2,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-scanned-ocr",
+          "status": "success",
+          "coverage": {
+            "basis": "engine-reported",
+            "completed": [
+              1
+            ],
+            "expected": 1,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-model-execution-original.pdf",
+          "status": "passed",
+          "stages": {
+            "layout.predict": {
+              "calls": 2,
+              "elapsedMs": 1699.9
+            },
+            "tf.encoder": {
+              "calls": 1,
+              "elapsedMs": 349.8
+            },
+            "tf.decode_loop": {
+              "calls": 1,
+              "elapsedMs": 42.3
+            },
+            "tf.bbox": {
+              "calls": 1,
+              "elapsedMs": 79.3
+            }
+          },
+          "tableformerStructure": {
+            "tables": 1,
+            "cells": 6
+          }
+        },
+        {
+          "name": "real-model-execution-scanned.pdf",
+          "status": "passed",
+          "stages": {
+            "layout.predict": {
+              "calls": 1,
+              "elapsedMs": 846
+            },
+            "ocr.det.net": {
+              "calls": 1,
+              "elapsedMs": 441.3
+            },
+            "ocr.rec": {
+              "calls": 1,
+              "elapsedMs": 84
+            }
+          }
+        },
+        {
+          "name": "real-pdf-page-range",
+          "status": "success",
+          "coverage": {
+            "basis": "engine-reported",
+            "requested": [
+              2,
+              2
+            ],
+            "completed": [
+              2
+            ],
+            "expected": 1,
+            "complete": true
+          }
+        },
+        {
+          "name": "real-empty.docx",
+          "status": "success",
+          "coverage": {
+            "basis": "not-reported",
+            "completed": []
+          }
+        },
+        {
+          "name": "reject-zero-slide-pptx-before-launch",
+          "status": "passed",
+          "rejectedBeforeLaunch": true
+        },
+        {
+          "name": "reject-corrupt.pdf",
+          "status": "passed"
+        },
+        {
+          "name": "reject-corrupt.docx",
+          "status": "passed"
+        },
+        {
+          "name": "reject-corrupt.pptx",
+          "status": "passed"
+        },
+        {
+          "name": "real-cooperative-document-budget",
+          "status": "partial_success",
+          "coverage": {
+            "basis": "engine-reported",
+            "completed": [
+              1
+            ],
+            "expected": 256,
+            "complete": false
+          }
+        },
+        {
+          "name": "real-abort-and-cleanup",
+          "status": "passed",
+          "realEngineObserved": true,
+          "descendantsGone": true,
+          "stagingEmpty": true
+        },
+        {
+          "name": "real-deadline-and-cleanup",
+          "status": "passed",
+          "realEngineObserved": true,
+          "descendantsGone": true,
+          "stagingEmpty": true
+        },
+        {
+          "name": "same-basename-concurrency",
+          "status": "passed"
+        },
+        {
+          "name": "fail-closed-missing-model",
+          "status": "passed",
+          "rejectedBeforeLaunch": true
+        },
+        {
+          "name": "fail-closed-corrupt-model",
+          "status": "passed",
+          "rejectedBeforeLaunch": true
+        },
+        {
+          "name": "final-runtime-and-fixture-integrity",
+          "status": "passed",
+          "sdkFetchCalls": 0
+        }
+      ]
+    }
+  ]
+}
