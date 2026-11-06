@@ -27,6 +27,22 @@ export default defineConfig([
       options.drop = ["console", "debugger"];
     },
   },
+  // Optional native execution remains a separate Node-only bundle.
+  {
+    entry: { native: "src/native-entry.ts" },
+    format: ["esm"],
+    dts: false,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    minify: true,
+    target: "es2022",
+    platform: "node",
+    outDir: "dist",
+    treeshake: true,
+    bundle: true,
+    external: ["fflate", "saxes"],
+  },
   // Web entry point - browser-based OCR (ESM only)
   {
     entry: {
