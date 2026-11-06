@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -73,7 +74,14 @@ async function verifyWatchLayout(layout: string) {
   const watcher = vi.mocked(watch).mock.results.at(-1)?.value as FSWatcher;
   await once(watcher, "ready");
   const original = join(watchRoot, "original.pdf");
-  await writeFile(original, "original caller bytes");
+  // Publish complete caller files atomically. Writing directly into the watched
+  // directory can legitimately emit both add and change before writeFile settles.
+  const stagedInput = join(directory, "staged-input.pdf");
+  const publishInput = async (path: string, content: string) => {
+    await writeFile(stagedInput, content);
+    await rename(stagedInput, path);
+  };
+  await publishInput(original, "original caller bytes");
   if (layout.endsWith("alias")) {
     // Real child startup can exceed Vitest's 1s polling default under coverage.
     // Keep every output-ownership assertion; allow the configured 5s job to settle.
@@ -104,10 +112,10 @@ async function verifyWatchLayout(layout: string) {
         : outputDir,
     "docling-job-caller.pdf"
   );
-  await writeFile(sibling, "another caller input");
+  await publishInput(sibling, "another caller input");
   await vi.waitFor(() => expect(processed).toHaveLength(2), { timeout: 10000 });
   const complete = once(client.progress, "file-processed");
-  await writeFile(original, "updated caller bytes");
+  await publishInput(original, "updated caller bytes");
   expect((await complete)[0]).toMatchObject({ file: original, success: true });
   // Hold longer than the converter's latency: the old implementation would
   // detect each new input snapshot and continually launch another process.

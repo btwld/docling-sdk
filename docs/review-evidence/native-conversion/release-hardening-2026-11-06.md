@@ -36,7 +36,10 @@ inputs, Google document export normalization, and deferred watcher-stop notifica
 Those corrections passed independent focused re-review. Delivery review and its scoped dependency fix
 also completed re-review without remaining findings. The final full coverage
 run exposed a one-second test polling limit below real child startup under load;
-only the wait allowance changed, with every ownership assertion retained.
+the wait allowance changed, with every ownership assertion retained. The first
+Node 22 CI run additionally exposed add/change notifications during non-atomic
+fixture writes. The fixture now publishes completed caller files using atomic
+rename; exact direct-layout counts and all job-ownership assertions remain.
 
 The work consolidates local subprocess and batch paths, HTTP configuration and
 request dispatch, task cleanup ownership, and exact job-output validation.
@@ -103,7 +106,10 @@ placeholder `any` types.
 ## Final local validation
 
 Linux x64, Node 20.20.2, Vitest 4.1.12; exact tool versions are retained in the
-runtime/check logs. All checks below completed successfully unless noted.
+runtime/check logs. The complete gate also passed on Node 22.23.4 after the
+atomic-fixture correction, with the same 887 tests and coverage percentages.
+Its five real-watcher cases passed independent re-review. All checks below
+completed successfully unless noted.
 
 | Gate | Result |
 | --- | --- |
@@ -118,7 +124,7 @@ runtime/check logs. All checks below completed successfully unless noted.
 | Real Serve 1.7.2 | Three integration tests pass |
 | Real Python 2.60.1 | Text/scanned PDF, DOCX, PPTX, corrupt input, timeout and referenced assets; Unicode/dollar filenames rechecked after ZIP changes |
 | Documentation build | Pass; 390 existing/generated-schema/JSDoc warnings remain visible |
-| Remote OS/Node matrix | Defined in CI; local Linux evidence does not establish Windows/macOS success |
+| Remote packed consumers | Passed on Linux/macOS/Windows, Node 18/24 ([run](https://github.com/btwld/docling-sdk/actions/runs/42288541626)); this first run also retained the Node 22 fixture failure described above |
 
 The original clean baseline was 154 passing tests with 23.17% broad line coverage
 (28.27% when restricted to production sources). The denominator and Vitest coverage
@@ -126,27 +132,29 @@ algorithm changed, so percentages are not a direct quality or speed comparison.
 
 ## Reviewable delivery order
 
-1. **Process lifecycle** — one shell-free runner, typed termination, output bounds,
+1. **[Process lifecycle](https://github.com/btwld/docling-sdk/pull/88)** — one shell-free runner, typed termination, output bounds,
    cleanup and compatible `CliUtils` adapter. Clean-layer checks: 236 unit tests.
-2. **Browser and WebSocket lifecycle** — worker/resources, observer failures,
+2. **[Browser and WebSocket lifecycle](https://github.com/btwld/docling-sdk/pull/89)** — worker/resources, observer failures,
    monitoring/reconnection and lazy Node boundaries. Clean-layer checks: 399 tests.
-3. **Pinned Serve contracts** — actual schema/provenance, reproducible generation
+3. **[Pinned Serve contracts](https://github.com/btwld/docling-sdk/pull/90)** — actual schema/provenance, reproducible generation
    and runtime validation parity. Clean-layer checks: 421 tests.
-4. **HTTP/API/task lifecycle** — options/retries, concurrent task settlement,
+4. **[HTTP/API/task lifecycle](https://github.com/btwld/docling-sdk/pull/91)** — options/retries, concurrent task settlement,
    progress ownership, bounded errors and removal of the unused pool. Clean-layer
    checks: 680 tests.
-5. **Conversion ownership and assets** — snapshots, complete output inventory,
+5. **[Conversion ownership and assets](https://github.com/btwld/docling-sdk/pull/92)** — snapshots, complete output inventory,
    truthful status, directories/URLs/watchers, ZIP assets, production dependency
    fixes and reproducible Python probes. Clean-layer checks: 884 tests. The only
    subsequent edit extended real-watcher test polling; the final 887-test gate
    includes that edit, two coverage-gate tests and the Redocly compatibility regression.
-6. **Delivery gates and documentation** — toolchain audit, declaration finalization,
+6. **[Delivery gates and documentation](https://github.com/btwld/docling-sdk/pull/93)** — toolchain audit, declaration finalization,
    clean packed consumers, CI/coverage enforcement, removal of the comment-only
    S3 scaffold, synchronized contracts and preserved review evidence.
 
 Every clean layer passed typecheck, lint, tests and build from its committed
-lockfile. Layers are intended to be reviewed in order. Native Rust work follows
-these correctness and delivery gates, not a silent backend replacement.
+lockfile. Layers are intended to be reviewed in order. The six PRs are drafts; none has merged. Native Rust work follows
+these correctness and delivery gates, not a silent backend replacement. Read the
+current [top-PR checks](https://github.com/btwld/docling-sdk/pull/93/checks) for
+validation of subsequent commits rather than extrapolating from the initial run.
 
 ## Explicit remaining limits
 
