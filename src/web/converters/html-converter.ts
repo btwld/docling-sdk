@@ -364,7 +364,7 @@ export class DoclingConverter {
       ruby: "rb",
       dockerfile: "docker",
     };
-    return aliasMap[lowerLang] ?? lowerLang.replace(/[\s#+]/g, "-");
+    return aliasMap[lowerLang] ?? lowerLang.replace(/[^a-z0-9_-]/g, "-");
   }
 
   private cleanupMetadataTokens(docling: string): string {

@@ -78,7 +78,7 @@ function processInlineContent(content: string): string {
     match = inlineTagRegex.exec(content)
   ) {
     const textBefore = content.slice(lastIndex, match.index);
-    result += cleanLocationTokens(textBefore);
+    result += textBefore.replace(/<loc_\d+>/g, "");
 
     const [, tagName, innerContent] = match;
     const cleanInner = cleanLocationTokens(innerContent ?? "");
@@ -88,7 +88,7 @@ function processInlineContent(content: string): string {
     lastIndex = match.index + match[0].length;
   }
 
-  result += cleanLocationTokens(content.slice(lastIndex));
+  result += content.slice(lastIndex).replace(/<loc_\d+>/g, "");
   return result;
 }
 

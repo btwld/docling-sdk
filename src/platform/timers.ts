@@ -18,18 +18,15 @@ export function delay<T = void>(ms: number, value?: T, signal?: AbortSignal): Pr
       return;
     }
 
+    const onAbort = () => {
+      globalThis.clearTimeout(timeoutId);
+      reject(new DOMException("Delay aborted", "AbortError"));
+    };
     const timeoutId = globalThis.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
       resolve(value as T);
     }, ms);
-
-    signal?.addEventListener(
-      "abort",
-      () => {
-        globalThis.clearTimeout(timeoutId);
-        reject(new DOMException("Delay aborted", "AbortError"));
-      },
-      { once: true }
-    );
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -82,15 +79,16 @@ export async function withTimeout<T>(
   ms: number,
   message?: string
 ): Promise<T> {
-  const controller = createTimeoutController(ms);
-
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => {
+      reject(new DOMException(message ?? "Operation timed out", "TimeoutError"));
+    }, ms);
+  });
   try {
-    const result = await Promise.race([promise, timeout(ms, message)]);
-    controller.clear();
-    return result;
-  } catch (error) {
-    controller.clear();
-    throw error;
+    return await Promise.race([promise, deadline]);
+  } finally {
+    globalThis.clearTimeout(timeoutId);
   }
 }
 
@@ -121,13 +119,15 @@ export function throttle<T extends (...args: unknown[]) => unknown>(
   fn: T,
   ms: number
 ): (...args: Parameters<T>) => void {
-  let lastCall = 0;
+  let lastCall = Number.NEGATIVE_INFINITY;
   let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
 
   return (...args: Parameters<T>) => {
     const now = Date.now();
 
     if (now - lastCall >= ms) {
+      globalThis.clearTimeout(timeoutId);
+      timeoutId = undefined;
       lastCall = now;
       fn(...args);
     } else {
@@ -155,40 +155,32 @@ export function interval(
 ): AsyncIterable<number> & { stop: () => void } {
   let count = 0;
   let stopped = false;
-  let resolveNext: ((value: IteratorResult<number>) => void) | null = null;
-
+  const pending: Array<(value: IteratorResult<number>) => void> = [];
   const intervalId = globalThis.setInterval(() => {
-    if (resolveNext && !stopped) {
-      resolveNext({ value: count++, done: false });
-      resolveNext = null;
-    }
+    const resolve = pending.shift();
+    if (resolve) resolve({ value: count++, done: false });
   }, ms);
 
   const stop = () => {
     stopped = true;
     globalThis.clearInterval(intervalId);
-    if (resolveNext) {
-      resolveNext({ value: undefined as unknown as number, done: true });
-    }
+    signal?.removeEventListener("abort", stop);
+    for (const resolve of pending.splice(0)) resolve({ value: undefined, done: true });
   };
-
-  signal?.addEventListener("abort", stop, { once: true });
+  if (signal?.aborted) stop();
+  else signal?.addEventListener("abort", stop, { once: true });
 
   return {
     stop,
     [Symbol.asyncIterator](): AsyncIterator<number> {
       return {
         next(): Promise<IteratorResult<number>> {
-          if (stopped) {
-            return Promise.resolve({ value: undefined as unknown as number, done: true });
-          }
-          return new Promise((resolve) => {
-            resolveNext = resolve;
-          });
+          if (stopped) return Promise.resolve({ value: undefined, done: true });
+          return new Promise((resolve) => pending.push(resolve));
         },
         return(): Promise<IteratorResult<number>> {
           stop();
-          return Promise.resolve({ value: undefined as unknown as number, done: true });
+          return Promise.resolve({ value: undefined, done: true });
         },
       };
     },
@@ -220,18 +212,19 @@ export async function retry<T>(
     signal,
   } = options;
 
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new RangeError("maxAttempts must be a positive integer");
+  }
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal?.aborted) throw new DOMException("Operation aborted", "AbortError");
     try {
-      if (signal?.aborted) {
-        throw new DOMException("Operation aborted", "AbortError");
-      }
       return await fn();
     } catch (error) {
       lastError = error;
 
-      if (attempt >= maxAttempts || !shouldRetry(error, attempt)) {
+      if (signal?.aborted || attempt >= maxAttempts || !shouldRetry(error, attempt)) {
         throw error;
       }
 

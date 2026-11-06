@@ -1,3 +1,4 @@
+import { loadNodeModule } from "../../node-modules";
 /**
  * Node.js WebSocket adapter
  * Uses the 'ws' library for Node.js environments
@@ -47,7 +48,7 @@ async function getWsModule(): Promise<WsModule> {
 
   try {
     // Dynamic import of ws
-    wsModule = (await import("ws")) as WsModule;
+    wsModule = (await loadNodeModule("ws")) as WsModule;
     return wsModule;
   } catch {
     throw new Error(
@@ -59,8 +60,11 @@ async function getWsModule(): Promise<WsModule> {
 /**
  * Create a WebSocket message wrapper
  */
-function createMessage(data: string | Buffer | ArrayBuffer | Uint8Array): WebSocketMessage {
-  const isText = typeof data === "string";
+function createMessage(
+  data: string | Buffer | ArrayBuffer | Uint8Array,
+  isBinary = false
+): WebSocketMessage {
+  const isText = !isBinary;
 
   let binaryData: BinaryData;
   let textData: string;
@@ -169,6 +173,8 @@ export class NodeWebSocketAdapter implements WebSocketAdapter {
   private hooks: WebSocketHooks;
   private peer: NodeWebSocketPeer | null = null;
   private ws: WsWebSocket | null = null;
+  private generation = 0;
+  private cancelConnection: (() => void) | null = null;
 
   constructor(options: WebSocketAdapterOptions) {
     this.options = options;
@@ -176,21 +182,33 @@ export class NodeWebSocketAdapter implements WebSocketAdapter {
   }
 
   async connect(): Promise<WebSocketPeer> {
+    const generation = ++this.generation;
     const WsModule = await getWsModule();
+    if (generation !== this.generation) throw new Error("WebSocket connection canceled");
     const WebSocket = WsModule.default;
 
     return new Promise((resolve, reject) => {
       try {
-        this.ws = new WebSocket(this.options.url, this.options.protocols);
-        this.peer = new NodeWebSocketPeer(this.ws, this.options.url);
+        const socket = new WebSocket(this.options.url, this.options.protocols);
+        this.ws = socket;
+        this.peer = new NodeWebSocketPeer(socket, this.options.url);
+        let settled = false;
+        const fail = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          globalThis.clearTimeout(timeoutId);
+          this.cancelConnection = null;
+          reject(error);
+        };
+        this.cancelConnection = () => fail(new Error("WebSocket connection canceled"));
 
         // Setup timeout
         let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
         if (this.options.timeout) {
           timeoutId = globalThis.setTimeout(() => {
-            if (this.ws?.readyState === ReadyState.CONNECTING) {
-              this.ws.terminate();
-              reject(new Error("WebSocket connection timeout"));
+            if (socket.readyState === ReadyState.CONNECTING) {
+              fail(new Error("WebSocket connection timeout"));
+              socket.terminate();
             }
           }, this.options.timeout);
         }
@@ -198,23 +216,24 @@ export class NodeWebSocketAdapter implements WebSocketAdapter {
         // Setup event handlers
         const peer = this.peer;
 
-        this.ws.on("open", () => {
-          if (timeoutId) globalThis.clearTimeout(timeoutId);
-          if (peer) {
-            this.hooks.open?.(peer);
-            resolve(peer);
-          }
+        socket.on("open", () => {
+          if (settled) return;
+          settled = true;
+          globalThis.clearTimeout(timeoutId);
+          this.cancelConnection = null;
+          resolve(peer);
+          this.hooks.open?.(peer);
         });
 
-        this.ws.on("message", ((data: string | Buffer | ArrayBuffer) => {
+        socket.on("message", ((data: string | Buffer | ArrayBuffer, isBinary: boolean) => {
           if (peer) {
-            const message = createMessage(data);
+            const message = createMessage(data, isBinary);
             this.hooks.message?.(peer, message);
           }
         }) as (...args: unknown[]) => void);
 
-        this.ws.on("close", ((code: number, reason: Buffer) => {
-          if (timeoutId) globalThis.clearTimeout(timeoutId);
+        socket.on("close", ((code: number, reason: Buffer) => {
+          fail(new Error(`WebSocket closed before opening: ${code}`));
           if (peer) {
             const closeEvent: WebSocketCloseEvent = {
               code,
@@ -225,8 +244,8 @@ export class NodeWebSocketAdapter implements WebSocketAdapter {
           }
         }) as (...args: unknown[]) => void);
 
-        this.ws.on("error", ((error: Error) => {
-          if (timeoutId) globalThis.clearTimeout(timeoutId);
+        socket.on("error", ((error: Error) => {
+          fail(error);
           if (peer) {
             const errorEvent = {
               message: error.message,
@@ -234,18 +253,15 @@ export class NodeWebSocketAdapter implements WebSocketAdapter {
             };
             this.hooks.error?.(peer, errorEvent);
           }
-          if (this.ws?.readyState === ReadyState.CONNECTING) {
-            reject(error);
-          }
         }) as (...args: unknown[]) => void);
 
-        this.ws.on("ping", ((data: Buffer) => {
+        socket.on("ping", ((data: Buffer) => {
           if (peer) {
             this.hooks.ping?.(peer, new Uint8Array(data));
           }
         }) as (...args: unknown[]) => void);
 
-        this.ws.on("pong", ((data: Buffer) => {
+        socket.on("pong", ((data: Buffer) => {
           if (peer) {
             this.hooks.pong?.(peer, new Uint8Array(data));
           }
@@ -265,7 +281,11 @@ export class NodeWebSocketAdapter implements WebSocketAdapter {
   }
 
   close(code = 1000, reason = ""): void {
-    this.ws?.close(code, reason);
+    this.generation++;
+    this.cancelConnection?.();
+    this.cancelConnection = null;
+    if (this.ws?.readyState === ReadyState.CONNECTING) this.ws.terminate();
+    else this.ws?.close(code, reason);
     this.ws = null;
     this.peer = null;
   }

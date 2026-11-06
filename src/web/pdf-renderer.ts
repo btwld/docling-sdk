@@ -18,9 +18,18 @@ export async function renderPdfToImages(
   data: Uint8Array | ArrayBuffer,
   options?: { scale?: number }
 ): Promise<RenderedPage[]> {
-  let getDocumentProxy: (
-    data: Uint8Array
-  ) => Promise<{ numPages: number; getPage: (pageNum: number) => Promise<unknown> }>;
+  type PdfPage = {
+    getViewport(options: { scale: number }): { width: number; height: number };
+    render(options: { canvasContext: unknown; viewport: { width: number; height: number } }): {
+      promise: Promise<void>;
+    };
+    cleanup?: () => void;
+  };
+  let getDocumentProxy: (data: Uint8Array) => Promise<{
+    numPages: number;
+    getPage(pageNumber: number): Promise<PdfPage>;
+    destroy?: () => void | Promise<void>;
+  }>;
 
   try {
     const unpdf = await import("unpdf");
@@ -30,52 +39,62 @@ export async function renderPdfToImages(
   }
 
   const scale = options?.scale ?? 2;
+  if (!Number.isFinite(scale) || scale <= 0)
+    throw new RangeError("PDF scale must be positive and finite");
   const pdfData = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
   const pdf = await getDocumentProxy(pdfData);
   const pages: RenderedPage[] = [];
 
-  for (let i = 1; i <= pdf.numPages; i++) {
-    // biome-ignore lint/suspicious/noExplicitAny: pdf.js page type is complex
-    const page = (await pdf.getPage(i)) as any;
-    const viewport = page.getViewport({ scale });
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      try {
+        const viewport = page.getViewport({ scale });
 
-    // Use OffscreenCanvas if available (Web Workers), otherwise regular canvas
-    let canvas: OffscreenCanvas | HTMLCanvasElement;
-    if (typeof OffscreenCanvas !== "undefined") {
-      canvas = new OffscreenCanvas(viewport.width, viewport.height);
-    } else if (typeof document !== "undefined") {
-      canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-    } else {
-      throw new Error("No canvas support available. PDF rendering requires a browser environment.");
+        // Use OffscreenCanvas if available (Web Workers), otherwise regular canvas
+        let canvas: OffscreenCanvas | HTMLCanvasElement;
+        if (typeof OffscreenCanvas !== "undefined") {
+          canvas = new OffscreenCanvas(viewport.width, viewport.height);
+        } else if (typeof document !== "undefined") {
+          canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+        } else {
+          throw new Error(
+            "No canvas support available. PDF rendering requires a browser environment."
+          );
+        }
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Could not get canvas 2d context");
+
+        await page.render({
+          canvasContext: ctx,
+          viewport,
+        }).promise;
+
+        let dataUrl: string;
+        if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
+          const blob = await canvas.convertToBlob({ type: "image/png" });
+          dataUrl = await blobToDataUrl(blob);
+        } else {
+          dataUrl = (canvas as HTMLCanvasElement).toDataURL("image/png");
+        }
+
+        pages.push({
+          pageNumber: i,
+          dataUrl,
+          width: viewport.width,
+          height: viewport.height,
+        });
+      } finally {
+        page.cleanup?.();
+      }
     }
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Could not get canvas 2d context");
-
-    await page.render({
-      canvasContext: ctx,
-      viewport,
-    }).promise;
-
-    let dataUrl: string;
-    if (canvas instanceof OffscreenCanvas) {
-      const blob = await canvas.convertToBlob({ type: "image/png" });
-      dataUrl = await blobToDataUrl(blob);
-    } else {
-      dataUrl = canvas.toDataURL("image/png");
-    }
-
-    pages.push({
-      pageNumber: i,
-      dataUrl,
-      width: viewport.width,
-      height: viewport.height,
-    });
+    return pages;
+  } finally {
+    await pdf.destroy?.();
   }
-
-  return pages;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

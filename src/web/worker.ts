@@ -64,11 +64,10 @@ async function loadModel(config: DoclingWebConfig): Promise<void> {
   const modelId = config.modelId ?? DEFAULT_MODEL_ID;
 
   if (config.wasmPaths) {
-    (env.backends as { onnx?: { wasm?: { wasmPaths?: Record<string, string> } } }).onnx = {
-      wasm: {
-        wasmPaths: config.wasmPaths,
-      },
-    };
+    const backends = env.backends as { onnx?: { wasm?: { wasmPaths?: Record<string, string> } } };
+    backends.onnx ??= {};
+    backends.onnx.wasm ??= {};
+    backends.onnx.wasm.wasmPaths = config.wasmPaths;
   }
 
   if (!processor) {
@@ -82,8 +81,11 @@ async function loadModel(config: DoclingWebConfig): Promise<void> {
     let device: "webgpu" | "wasm" = "webgpu";
     if (config.device === "wasm") {
       device = "wasm";
-    } else if (config.device === "auto" || config.device === "webgpu") {
-      const gpu = (navigator as Navigator & { gpu?: unknown }).gpu;
+    } else {
+      const gpu =
+        typeof navigator === "undefined"
+          ? undefined
+          : (navigator as Navigator & { gpu?: unknown }).gpu;
       if (!gpu) {
         console.warn("WebGPU not available, falling back to WASM");
         device = "wasm";
@@ -113,7 +115,7 @@ async function loadModel(config: DoclingWebConfig): Promise<void> {
             total += val.total;
           }
 
-          const percent = Math.round((loaded / total) * 100);
+          const percent = total > 0 ? Math.min(Math.round((loaded / total) * 100), 100) : 0;
           postTypedMessage({
             type: "PROGRESS",
             progress: percent / 100,
@@ -210,17 +212,23 @@ const MESSAGE_HANDLERS: WorkerHandlerMap = {
   },
 };
 
-self.onmessage = async (event: MessageEvent<WorkerMessageToWorker>) => {
-  try {
-    const handler = MESSAGE_HANDLERS[event.data.type] as
-      | ((data: WorkerMessageToWorker) => Promise<void>)
-      | undefined;
-    if (!handler) {
-      throw new Error(`Unknown message type: ${event.data.type}`);
+// Worker messages can arrive while asynchronous initialization/inference is pending.
+// Serialize them so models and streamed responses cannot overlap.
+let messageQueue = Promise.resolve();
+self.onmessage = (event: MessageEvent<WorkerMessageToWorker>) => {
+  messageQueue = messageQueue.then(async () => {
+    try {
+      const handler = MESSAGE_HANDLERS[event.data.type] as
+        | ((data: WorkerMessageToWorker) => Promise<void>)
+        | undefined;
+      if (!handler) {
+        throw new Error(`Unknown message type: ${event.data.type}`);
+      }
+      await handler(event.data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      postTypedMessage({ type: "ERROR", error: message });
     }
-    await handler(event.data);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    postTypedMessage({ type: "ERROR", error: message });
-  }
+  });
+  return messageQueue;
 };

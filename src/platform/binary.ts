@@ -120,6 +120,9 @@ export function hexToUint8Array(hex: string): Uint8Array {
     throw new Error("Hex string must have even length");
   }
 
+  if (!/^[0-9a-f]*$/i.test(cleanHex)) {
+    throw new Error("Hex string contains invalid characters");
+  }
   const bytes = new Uint8Array(cleanHex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = Number.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
@@ -174,11 +177,17 @@ export function equalsBinary(a: Uint8Array, b: Uint8Array): boolean {
  * Create a view of a Uint8Array without copying
  */
 export function viewBinary(data: Uint8Array, byteOffset: number, byteLength?: number): Uint8Array {
-  return new Uint8Array(
-    data.buffer,
-    data.byteOffset + byteOffset,
-    byteLength ?? data.length - byteOffset
-  );
+  const length = byteLength ?? data.length - byteOffset;
+  if (
+    !Number.isInteger(byteOffset) ||
+    !Number.isInteger(length) ||
+    byteOffset < 0 ||
+    length < 0 ||
+    byteOffset + length > data.length
+  ) {
+    throw new RangeError("Binary view is outside the input bounds");
+  }
+  return new Uint8Array(data.buffer, data.byteOffset + byteOffset, length);
 }
 
 /**
@@ -278,10 +287,8 @@ export function randomUUID(): string {
     globalThis.crypto.getRandomValues(bytes);
 
     // Set version (4) and variant (10) bits
-    // biome-ignore lint/style/noNonNullAssertion: bytes[6] is guaranteed to exist in a 16-byte array
-    bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-    // biome-ignore lint/style/noNonNullAssertion: bytes[8] is guaranteed to exist in a 16-byte array
-    bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+    bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+    bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
 
     const hex = uint8ArrayToHex(bytes);
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
