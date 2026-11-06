@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Validation-only structural contract for the pinned native DoclingDocument 1.10.0 output. This is a bounded SDK acceptance schema, not the complete upstream schema or Python parity.",
+  "type": "object",
+  "required": ["schema_name", "version", "name", "origin", "body", "furniture", "groups", "texts", "pictures", "tables", "key_value_items", "form_items", "pages"],
+  "properties": {
+    "schema_name": {"const": "DoclingDocument"},
+    "version": {"const": "1.10.0"},
+    "name": {"type": "string"},
+    "origin": {"type": "object", "required": ["mimetype", "binary_hash", "filename"], "properties": {"mimetype": {"type": "string"}, "binary_hash": {"type": "integer"}, "filename": {"type": "string"}}},
+    "body": {"$ref": "#/$defs/node"},
+    "furniture": {"$ref": "#/$defs/node"},
+    "groups": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "texts": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/node"}, {"type": "object", "required": ["text", "orig"], "properties": {"text": {"type": "string"}, "orig": {"type": "string"}}}]}},
+    "pictures": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/node"}, {"type": "object", "required": ["image"], "properties": {"image": {"type": "object", "required": ["uri", "mimetype", "size", "dpi"], "properties": {"uri": {"type": "string", "pattern": "^data:image/png;base64,"}, "mimetype": {"const": "image/png"}, "dpi": {"type": "number", "exclusiveMinimum": 0}, "size": {"$ref": "#/$defs/size"}}}}}]}},
+    "tables": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/node"}, {"type": "object", "required": ["data"], "properties": {"data": {"type": "object", "required": ["num_rows", "num_cols", "table_cells", "grid"], "properties": {"num_rows": {"type": "integer", "minimum": 0}, "num_cols": {"type": "integer", "minimum": 0}, "table_cells": {"type": "array", "items": {"type": "object", "required": ["text", "start_row_offset_idx", "start_col_offset_idx", "row_span", "col_span"], "properties": {"text": {"type": "string"}, "start_row_offset_idx": {"type": "integer", "minimum": 0}, "start_col_offset_idx": {"type": "integer", "minimum": 0}, "row_span": {"type": "integer", "minimum": 1}, "col_span": {"type": "integer", "minimum": 1}}}}, "grid": {"type": "array"}}}}}]}},
+    "key_value_items": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "form_items": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "pages": {"type": "object", "propertyNames": {"pattern": "^[1-9][0-9]*$"}, "additionalProperties": {"type": "object", "required": ["page_no", "size"], "properties": {"page_no": {"type": "integer", "minimum": 1}, "size": {"$ref": "#/$defs/size"}}}}
+  },
+  "$defs": {
+    "size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
+    "reference": {"type": "object", "required": ["$ref"], "properties": {"$ref": {"type": "string", "pattern": "^#/"}}},
+    "node": {"type": "object", "required": ["self_ref", "children", "content_layer", "label"], "properties": {
+      "self_ref": {"type": "string", "pattern": "^#/"},
+      "children": {"type": "array", "items": {"$ref": "#/$defs/reference"}},
+      "parent": {"$ref": "#/$defs/reference"},
+      "content_layer": {"enum": ["body", "furniture", "notes", "background", "invisible"]},
+      "label": {"type": "string"},
+      "prov": {"type": "array", "items": {"type": "object", "required": ["page_no", "bbox", "charspan"], "properties": {
+        "page_no": {"type": "integer", "minimum": 1},
+        "bbox": {"type": "object", "required": ["l", "t", "r", "b", "coord_origin"], "properties": {"l": {"type": "number"}, "t": {"type": "number"}, "r": {"type": "number"}, "b": {"type": "number"}, "coord_origin": {"enum": ["TOPLEFT", "BOTTOMLEFT"]}}},
+        "charspan": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}], "minItems": 2, "maxItems": 2}
+      }}}
+    }}
+  }
+}

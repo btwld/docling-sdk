@@ -2,6 +2,8 @@
 
 [Home](../README.md) > [Docs](./README.md) > Configuration
 
+The optional [native client](native-client.md#options) uses its own narrow configuration from `docling-sdk/native`; it is not a fourth root-factory key. It accepts no arbitrary CLI/environment/model passthrough.
+
 The SDK uses a discriminated union for configuration. Pass an object with exactly one of the `api`, `cli`, or `web` keys to select the client mode.
 
 ```typescript

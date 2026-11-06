@@ -2,6 +2,10 @@
 
 [Home](../README.md) > [Docs](./README.md) > Migration Guide
 
+## Optional native selection (unreleased)
+
+Existing imports, factory behavior and Python/API/browser defaults remain unchanged. Native use is opt-in through `createNativeClient` from `docling-sdk/native`, with [separate setup and a narrow contract](native-client.md). It is not a drop-in replacement for Python batch/watch/S3/browser methods. No major default switch is part of this stack.
+
 ## v1.x to v2.0
 
 The v2 runtime changes introduced portable binary inputs, browser entry points

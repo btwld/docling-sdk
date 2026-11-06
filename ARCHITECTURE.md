@@ -151,3 +151,16 @@ reviewed schema change and do not imply client feature parity.
 
 Evidence: [schema provenance](openapi/schema-provenance.json),
 [regeneration](scripts/generate-openapi.mjs), [type guide](docs/typescript.md).
+
+## Optional isolated native executable
+
+Date: 2026-11-06 · Implemented in the unmerged native PR stack
+
+Expose `docling-sdk/native` separately, using the pinned upstream executable with
+verified assets and a fresh Linux Bubblewrap job per request, so cancellation,
+output ownership and no-egress do not depend on an in-process native promise.
+Keep Python/API/browser defaults unchanged; the initial Linux-only support and
+explicit setup are deliberate costs, not claims of cross-platform parity.
+
+Evidence: [native contract](docs/native-client.md), [native entry](src/native-entry.ts),
+[validation record](docs/review-evidence/native-conversion/native-backend-2026-11-06.md).

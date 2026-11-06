@@ -4,13 +4,14 @@
 
 ## Prerequisites
 
-Docling SDK supports three client modes, each with its own requirements:
+The existing factory supports three modes. The optional native entry is separate:
 
 | Client | Runtime | Requirement |
 |--------|---------|-------------|
 | API | Node.js >= 18, Bun, Deno, browser | A running [Docling Serve](https://github.com/DS4SD/docling-serve) instance |
 | CLI | Node.js >= 18 | Python with [Docling](https://github.com/DS4SD/docling) installed |
 | Web | Browser with WebGPU or WASM | Peer dependencies (see below) |
+| [Native](native-client.md) | Node >=18, Linux x64 | Explicit pinned runtime/model setup and Bubblewrap; no default change |
 
 ## Installation
 

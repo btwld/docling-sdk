@@ -7,6 +7,7 @@ TypeScript clients for [Docling](https://github.com/DS4SD/docling).
 - Convert documents to Markdown, HTML, text and structured JSON.
 - API: Docling Serve performs conversion, chunking and S3 work; the SDK sends requests and tracks tasks.
 - CLI: Node runs an installed Python Docling command for local conversion and batch work.
+- Optional native: `docling-sdk/native` runs a pinned Rust executable with separately verified models on Linux x64; see the [native guide](docs/native-client.md). Existing defaults do not change.
 - Web OCR: a browser worker runs a downloaded model on images; PDF pages first render to images with optional `unpdf`.
 - Clients share conversion methods but have different capabilities; choose by where processing should run. Web does not parse Office/HTML inputs or support file-output methods.
 - Portable binary input is `Uint8Array`; filesystem and stream behavior depend on the method and runtime.
@@ -46,7 +47,7 @@ console.log(result.document.md_content);
 
 ## Next steps
 
-- [Getting started](docs/getting-started.md) — setup and examples for all three modes
+- [Getting started](docs/getting-started.md) — setup and examples for existing modes and the optional native client
 - [Guides and reference](docs/README.md) — configuration, features and client methods
 - [Runtime entry points](docs/cross-runtime.md) — browser imports and worker setup
 - [Transfer behavior](docs/streaming.md) — buffering, streams and byte output

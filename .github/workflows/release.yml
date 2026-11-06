@@ -99,10 +99,18 @@ jobs:
       - name: Verify packed consumers
         run: npm run validate:package
 
+  native-validation:
+    name: Real Native Runtime Gate
+    needs: validate
+    if: needs.validate.outputs.should-release == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native.yml
+
   # Release job - only runs if validation passes and changes detected
   release:
     name: Release
-    needs: validate
+    needs: [validate, native-validation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: needs.validate.outputs.should-release == 'true'

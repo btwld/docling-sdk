@@ -2,6 +2,8 @@
 
 [Home](../README.md) > [Docs](./README.md) > Error Handling
 
+The optional native backend exports `NativeError` from `docling-sdk/native`, with a distinct [result/error contract](native-client.md#results-and-errors). Check `partial_success` and page coverage before treating a capture as complete.
+
 ## Conversion errors
 
 Ordinary `convert` methods return a `ConvertDocumentResponse` and reject on

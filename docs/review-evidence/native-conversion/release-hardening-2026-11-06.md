@@ -1,5 +1,7 @@
 # SDK hardening and delivery validation — 2026-11-06
 
+For subsequent optional Rust work, see the [native implementation record](native-backend-2026-11-06.md). This document records the earlier six-PR hardening milestone.
+
 This record supersedes the readiness conclusions in the earlier dated reviews,
 without rewriting their observations. Python remains the local backend. The
 optional Rust executable backend is **not implemented** and no package is released
